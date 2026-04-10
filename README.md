@@ -1,0 +1,70 @@
+# Simple Hartree-Fock Teaching Example
+
+这个项目现在扩展成了一个更适合教学和继续修改的小型 RHF 程序：
+
+- 支持任意分子坐标输入
+- 支持 `STO-3G` 和 `6-31G(d)`
+- 保留“自己写 SCF 主循环、电子积分交给 `PySCF`”的结构
+- 按模块拆分，便于阅读和改写
+
+## 安装依赖
+
+```bash
+cd /Users/roxy/ROXY_Projects/projects/simple_hf_water
+python3 -m pip install -r requirements.txt
+```
+
+## 目录结构
+
+- `rhf_sto3g_water.py`: 顶层入口脚本
+- `simple_hf/geometry.py`: 分子坐标输入与默认示例
+- `simple_hf/rhf.py`: 分子构建与 RHF 主循环
+- `simple_hf/cli.py`: 命令行参数与结果打印
+- `examples/water.xyz`: 水分子示例输入
+
+## 运行示例
+
+默认计算水分子，基组默认是 `sto-3g`：
+
+```bash
+python3 rhf_sto3g_water.py
+```
+
+从 XYZ 文件读取分子：
+
+```bash
+python3 rhf_sto3g_water.py --xyz examples/water.xyz
+```
+
+直接在命令行输入几何：
+
+```bash
+python3 rhf_sto3g_water.py --geometry "O 0 0 0; H 0 -0.757160 0.586260; H 0 0.757160 0.586260"
+```
+
+改用 `6-31G(d)`：
+
+```bash
+python3 rhf_sto3g_water.py --xyz examples/water.xyz --basis '6-31G(d)'
+```
+
+也可以用 `6-31G*` 作为等价别名：
+
+```bash
+python3 rhf_sto3g_water.py --xyz examples/water.xyz --basis '6-31G*'
+```
+
+查看 SCF 每一步能量：
+
+```bash
+python3 rhf_sto3g_water.py --xyz examples/water.xyz --show-history
+```
+
+## 说明
+
+- 这个程序实现的是封闭壳层 `RHF`
+- 因此当前要求 `spin = 0`
+- 如果总电子数是奇数，程序会报错提醒
+- XYZ 文件输入默认按 `Angstrom` 处理
+- 当前只接受 `sto-3g`、`6-31G(d)` 和 `6-31G*` 这几种写法
+- 默认最大 SCF 迭代步数是 `100`，这样 `6-31G(d)` 也能稳定收敛
