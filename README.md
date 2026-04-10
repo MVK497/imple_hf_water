@@ -5,6 +5,7 @@
 - 支持任意分子坐标输入
 - 支持 `STO-3G` 和 `6-31G(d)`
 - 保留“自己写 SCF 主循环、电子积分交给 `PySCF`”的结构
+- 默认使用 `DIIS` 加速 SCF 收敛
 - 按模块拆分，便于阅读和改写
 
 ## 安装依赖
@@ -60,6 +61,12 @@ python3 rhf_sto3g_water.py --xyz examples/water.xyz --basis '6-31G*'
 python3 rhf_sto3g_water.py --xyz examples/water.xyz --show-history
 ```
 
+关闭 DIIS，观察朴素 SCF 与 DIIS 的区别：
+
+```bash
+python3 rhf_sto3g_water.py --xyz examples/water.xyz --basis '6-31G(d)' --no-diis
+```
+
 ## 说明
 
 - 这个程序实现的是封闭壳层 `RHF`
@@ -67,4 +74,6 @@ python3 rhf_sto3g_water.py --xyz examples/water.xyz --show-history
 - 如果总电子数是奇数，程序会报错提醒
 - XYZ 文件输入默认按 `Angstrom` 处理
 - 当前只接受 `sto-3g`、`6-31G(d)` 和 `6-31G*` 这几种写法
-- 默认最大 SCF 迭代步数是 `100`，这样 `6-31G(d)` 也能稳定收敛
+- 默认最大 SCF 迭代步数是 `100`
+- 默认开启 `DIIS`，`--diis-space` 默认是 `6`
+- `DIIS` 的误差矩阵使用 `FDS - SDF`

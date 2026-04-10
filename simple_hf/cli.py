@@ -53,6 +53,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--energy-tol", type=float, default=1.0e-10, help="Energy convergence threshold.")
     parser.add_argument("--density-tol", type=float, default=1.0e-8, help="Density convergence threshold.")
     parser.add_argument(
+        "--no-diis",
+        action="store_true",
+        help="Disable DIIS and use plain SCF iteration.",
+    )
+    parser.add_argument(
+        "--diis-space",
+        type=int,
+        default=6,
+        help="Number of Fock/error matrices kept in the DIIS subspace.",
+    )
+    parser.add_argument(
         "--show-history",
         action="store_true",
         help="Print the SCF total energy at each iteration.",
@@ -123,6 +134,8 @@ def print_result(spec: MoleculeSpec, result: RHFResult, nao: int, nelectron: int
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    if args.diis_space < 2:
+        parser.error("--diis-space must be at least 2.")
     spec = build_spec_from_args(args)
     mol = build_molecule(spec)
     result = run_rhf(
@@ -130,5 +143,7 @@ def main() -> None:
         max_iter=args.max_iter,
         e_tol=args.energy_tol,
         d_tol=args.density_tol,
+        use_diis=not args.no_diis,
+        diis_space=args.diis_space,
     )
     print_result(spec, result, mol.nao_nr(), mol.nelectron, args.show_history)
