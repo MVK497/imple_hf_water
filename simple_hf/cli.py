@@ -12,6 +12,7 @@ from .geometry import (
 )
 from .mp2 import MP2Result, run_mp2
 from .rhf import RHFResult, build_molecule, run_rhf
+from .ump2 import UMP2Result, run_ump2
 from .uhf import UHFResult, run_uhf
 
 
@@ -41,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--method",
         type=str,
         default="rhf",
-        choices=["rhf", "uhf", "mp2"],
+        choices=["rhf", "uhf", "mp2", "ump2"],
         help="Electronic structure method to run.",
     )
     parser.add_argument("--charge", type=int, default=0, help="Total molecular charge.")
@@ -218,6 +219,50 @@ def print_uhf_result(
             print(f"  Iter {iteration:>2d}: {energy:.12f}")
 
 
+def print_ump2_result(
+    spec: MoleculeSpec,
+    uhf_result: UHFResult,
+    ump2_result: UMP2Result,
+    nao: int,
+    nelectron: int,
+    show_history: bool,
+) -> None:
+    print("Unrestricted MP2")
+    print(f"System: {spec.title}")
+    print(f"Basis set: {spec.basis}")
+    print(f"Unit: {spec.unit}")
+    print(f"Charge: {spec.charge}")
+    print(f"Spin: {spec.spin}")
+    print(f"Basis functions: {nao}")
+    print(f"Electrons: {nelectron}")
+    print(f"Alpha electrons: {ump2_result.nocc_alpha}")
+    print(f"Beta electrons:  {ump2_result.nocc_beta}")
+    print(f"Alpha virtual orbitals: {ump2_result.nvir_alpha}")
+    print(f"Beta virtual orbitals:  {ump2_result.nvir_beta}")
+    print(f"UHF iterations: {uhf_result.iterations}")
+    print(f"Nuclear repulsion energy: {uhf_result.nuclear_repulsion:.12f} Eh")
+    print(f"UHF energy:               {ump2_result.uhf_energy:.12f} Eh")
+    print(f"UMP2 aa correlation:      {ump2_result.correlation_energy_aa:.12f} Eh")
+    print(f"UMP2 ab correlation:      {ump2_result.correlation_energy_ab:.12f} Eh")
+    print(f"UMP2 bb correlation:      {ump2_result.correlation_energy_bb:.12f} Eh")
+    print(f"UMP2 correlation energy:  {ump2_result.ump2_correlation_energy:.12f} Eh")
+    print(f"Total UMP2 energy:        {ump2_result.total_energy:.12f} Eh")
+    print()
+    print("Alpha orbital energies (Eh):")
+    for index, energy in enumerate(ump2_result.orbital_energies_alpha, start=1):
+        print(f"  aMO {index:>2d}: {energy: .12f}")
+    print()
+    print("Beta orbital energies (Eh):")
+    for index, energy in enumerate(ump2_result.orbital_energies_beta, start=1):
+        print(f"  bMO {index:>2d}: {energy: .12f}")
+
+    if show_history:
+        print()
+        print("UHF SCF history (total energy in Eh):")
+        for iteration, energy in enumerate(uhf_result.history, start=1):
+            print(f"  Iter {iteration:>2d}: {energy:.12f}")
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -225,7 +270,7 @@ def main() -> None:
         parser.error("--diis-space must be at least 2.")
     spec = build_spec_from_args(args)
     mol = build_molecule(spec)
-    result = run_rhf(
+    rhf_result = run_rhf(
         mol,
         max_iter=args.max_iter,
         e_tol=args.energy_tol,
@@ -234,14 +279,14 @@ def main() -> None:
         diis_space=args.diis_space,
     ) if args.method in {"rhf", "mp2"} else None
     if args.method == "rhf":
-        assert result is not None
-        print_rhf_result(spec, result, mol.nao_nr(), mol.nelectron, args.show_history)
+        assert rhf_result is not None
+        print_rhf_result(spec, rhf_result, mol.nao_nr(), mol.nelectron, args.show_history)
         return
 
     if args.method == "mp2":
-        assert result is not None
-        mp2_result = run_mp2(mol, result)
-        print_mp2_result(spec, result, mp2_result, mol.nao_nr(), mol.nelectron, args.show_history)
+        assert rhf_result is not None
+        mp2_result = run_mp2(mol, rhf_result)
+        print_mp2_result(spec, rhf_result, mp2_result, mol.nao_nr(), mol.nelectron, args.show_history)
         return
 
     uhf_result = run_uhf(
@@ -252,4 +297,9 @@ def main() -> None:
         use_diis=not args.no_diis,
         diis_space=args.diis_space,
     )
-    print_uhf_result(spec, uhf_result, mol.nao_nr(), mol.nelectron, args.show_history)
+    if args.method == "uhf":
+        print_uhf_result(spec, uhf_result, mol.nao_nr(), mol.nelectron, args.show_history)
+        return
+
+    ump2_result = run_ump2(mol, uhf_result)
+    print_ump2_result(spec, uhf_result, ump2_result, mol.nao_nr(), mol.nelectron, args.show_history)

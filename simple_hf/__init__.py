@@ -7,12 +7,14 @@ from .geometry import (
 )
 from .mp2 import MP2Result, run_mp2
 from .rhf import RHFResult, build_molecule, run_rhf
+from .ump2 import UMP2Result, run_ump2
 from .uhf import UHFResult, run_uhf
 
 __all__ = [
     "MoleculeSpec",
     "MP2Result",
     "RHFResult",
+    "UMP2Result",
     "UHFResult",
     "build_molecule",
     "default_water_spec",
@@ -21,5 +23,6 @@ __all__ = [
     "read_xyz_geometry",
     "run_mp2",
     "run_rhf",
+    "run_ump2",
     "run_uhf",
 ]
