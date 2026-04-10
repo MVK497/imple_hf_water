@@ -113,5 +113,6 @@ python3 rhf_sto3g_water.py --xyz examples/water.xyz --basis '6-31G(d)' --no-diis
 - 默认开启 `DIIS`，`--diis-space` 默认是 `6`
 - `DIIS` 的误差矩阵使用 `FDS - SDF`
 - `UHF` 中分别对 `alpha` 和 `beta` Fock 矩阵构造误差，并用联合 DIIS 外推
+- `UHF` 现在会输出 `<S^2>`、理论 `<S^2>` 和自旋污染量
 - `MP2` 部分用 `numpy.einsum` 做 `AO -> MO` 双电子积分变换，适合小体系教学演示
 - `UMP2` 把相关能拆成 `aa`、`ab`、`bb` 三部分，便于理解同自旋与异自旋贡献

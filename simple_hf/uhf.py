@@ -28,6 +28,9 @@ class UHFResult:
     history: list[float]
     nalpha: int
     nbeta: int
+    s2: float
+    expected_s2: float
+    spin_contamination: float
 
 
 def build_spin_density(coefficients: np.ndarray, nocc: int) -> np.ndarray:
@@ -67,6 +70,31 @@ def _validate_uhf_inputs(mol: gto.Mole) -> tuple[int, int]:
     if nalpha < 0 or nbeta < 0:
         raise ValueError("Invalid alpha/beta electron counts for UHF.")
     return nalpha, nbeta
+
+
+def compute_uhf_s2(
+    overlap: np.ndarray,
+    coeff_alpha: np.ndarray,
+    coeff_beta: np.ndarray,
+    nalpha: int,
+    nbeta: int,
+) -> tuple[float, float, float]:
+    occ_alpha = coeff_alpha[:, :nalpha]
+    occ_beta = coeff_beta[:, :nbeta]
+    if nalpha == 0 or nbeta == 0:
+        overlap_occ = 0.0
+    else:
+        spin_overlap = occ_alpha.T @ overlap @ occ_beta
+        overlap_occ = float(np.sum(np.abs(spin_overlap) ** 2))
+
+    sz = 0.5 * (nalpha - nbeta)
+    s2 = sz * (sz + 1.0) + nbeta - overlap_occ
+    expected_s2 = 0.5 * mol_spin_from_counts(nalpha, nbeta) * (0.5 * mol_spin_from_counts(nalpha, nbeta) + 1.0)
+    return s2, expected_s2, s2 - expected_s2
+
+
+def mol_spin_from_counts(nalpha: int, nbeta: int) -> int:
+    return nalpha - nbeta
 
 
 def run_uhf(
@@ -140,6 +168,13 @@ def run_uhf(
         if previous_energy is not None and abs(total_energy - previous_energy) < e_tol and density_change < d_tol:
             orbital_energies_alpha, coeff_alpha = diagonalize_fock(new_fock_alpha, x)
             orbital_energies_beta, coeff_beta = diagonalize_fock(new_fock_beta, x)
+            s2, expected_s2, spin_contamination = compute_uhf_s2(
+                s,
+                coeff_alpha,
+                coeff_beta,
+                nalpha,
+                nbeta,
+            )
             return UHFResult(
                 energy=float(total_energy),
                 electronic_energy=float(electronic_energy),
@@ -154,6 +189,9 @@ def run_uhf(
                 history=history,
                 nalpha=nalpha,
                 nbeta=nbeta,
+                s2=float(s2),
+                expected_s2=float(expected_s2),
+                spin_contamination=float(spin_contamination),
             )
 
         density_alpha = new_density_alpha
