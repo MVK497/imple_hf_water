@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from pyscf import gto
+from pyscf import gto, scf
 
 from .rhf import (
     DIISHelper,
@@ -199,3 +199,17 @@ def run_uhf(
         previous_energy = total_energy
 
     raise RuntimeError("UHF did not converge within the iteration limit.")
+
+
+def build_uhf_reference_mf(mol: gto.Mole, uhf_result: UHFResult) -> tuple[scf.UHF, tuple[np.ndarray, np.ndarray]]:
+    mf = scf.UHF(mol)
+    mo_occ_alpha = np.zeros(mol.nao_nr())
+    mo_occ_beta = np.zeros(mol.nao_nr())
+    mo_occ_alpha[: uhf_result.nalpha] = 1.0
+    mo_occ_beta[: uhf_result.nbeta] = 1.0
+    mf.mo_coeff = (uhf_result.coefficients_alpha, uhf_result.coefficients_beta)
+    mf.mo_energy = (uhf_result.orbital_energies_alpha, uhf_result.orbital_energies_beta)
+    mf.mo_occ = (mo_occ_alpha, mo_occ_beta)
+    mf.e_tot = uhf_result.energy
+    mf.converged = True
+    return mf, (mo_occ_alpha, mo_occ_beta)

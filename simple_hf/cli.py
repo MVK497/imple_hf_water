@@ -12,6 +12,7 @@ from .geometry import (
     read_xyz_geometry,
 )
 from .mp2 import MP2Result, run_mp2
+from .optimize import OptimizationResult, optimize_geometry
 from .rhf import RHFResult, build_molecule, run_rhf
 from .ump2 import UMP2Result, run_ump2
 from .uhf import UHFResult, run_uhf
@@ -63,6 +64,35 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-iter", type=int, default=100, help="Maximum SCF iterations.")
     parser.add_argument("--energy-tol", type=float, default=1.0e-10, help="Energy convergence threshold.")
     parser.add_argument("--density-tol", type=float, default=1.0e-8, help="Density convergence threshold.")
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Run a geometry optimization. Currently supported for RHF and UHF.",
+    )
+    parser.add_argument(
+        "--opt-max-steps",
+        type=int,
+        default=30,
+        help="Maximum geometry optimization steps.",
+    )
+    parser.add_argument(
+        "--grad-tol",
+        type=float,
+        default=1.0e-4,
+        help="Maximum Cartesian gradient threshold in Eh/Bohr.",
+    )
+    parser.add_argument(
+        "--opt-energy-tol",
+        type=float,
+        default=1.0e-8,
+        help="Optimization energy convergence threshold in Eh.",
+    )
+    parser.add_argument(
+        "--max-step-size",
+        type=float,
+        default=0.2,
+        help="Maximum geometry step size in Bohr.",
+    )
     parser.add_argument(
         "--no-diis",
         action="store_true",
@@ -308,12 +338,66 @@ def print_ump2_result(
             print(f"  Iter {iteration:>2d}: {energy:.12f}")
 
 
+def print_optimization_result(
+    spec: MoleculeSpec,
+    result: OptimizationResult,
+    show_history: bool,
+) -> None:
+    print(f"{result.method.upper()} Geometry Optimization")
+    print(f"System: {spec.title}")
+    print(f"Basis set: {spec.basis}")
+    print(f"Unit: {spec.unit}")
+    print(f"Charge: {spec.charge}")
+    print(f"Spin: {spec.spin}")
+    print(f"Converged: {result.converged}")
+    print(f"Optimization steps: {result.iterations}")
+    print(f"Initial energy: {result.initial_energy:.12f} Eh")
+    print(f"Final energy:   {result.final_energy:.12f} Eh")
+    print(f"Final max |grad|: {float(abs(result.final_gradient).max()):.12f} Eh/Bohr")
+    if isinstance(result.final_result, UHFResult):
+        print(f"Final <S^2>: {result.final_result.s2:.12f}")
+        print(f"Final spin contamination: {result.final_result.spin_contamination:.12f}")
+    print()
+    print("Optimized geometry:")
+    print(result.optimized_spec.atom)
+
+    if show_history and result.history:
+        print()
+        print("Optimization history:")
+        for step in result.history:
+            print(
+                f"  Step {step.step:>2d}: E = {step.energy:.12f}  "
+                f"max|g| = {step.max_gradient:.6e}  "
+                f"rms|g| = {step.rms_gradient:.6e}  "
+                f"|dx| = {step.step_length:.6e}"
+            )
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     if args.diis_space < 2:
         parser.error("--diis-space must be at least 2.")
+    if args.optimize and args.method not in {"rhf", "uhf"}:
+        parser.error("--optimize currently supports only --method rhf or --method uhf.")
     spec = build_spec_from_args(args)
+    if args.optimize:
+        opt_result = optimize_geometry(
+            spec,
+            method=args.method,
+            max_opt_steps=args.opt_max_steps,
+            grad_tol=args.grad_tol,
+            energy_tol=args.opt_energy_tol,
+            max_step_size=args.max_step_size,
+            max_iter=args.max_iter,
+            scf_e_tol=args.energy_tol,
+            scf_d_tol=args.density_tol,
+            use_diis=not args.no_diis,
+            diis_space=args.diis_space,
+        )
+        print_optimization_result(spec, opt_result, args.show_history)
+        return
+
     mol = build_molecule(spec)
     rhf_result = run_rhf(
         mol,

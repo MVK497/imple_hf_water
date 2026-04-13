@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from pyscf import gto
+from pyscf import gto, scf
 
 from .geometry import MoleculeSpec
 
@@ -71,6 +71,19 @@ def build_molecule(spec: MoleculeSpec) -> gto.Mole:
     mol.spin = spec.spin
     mol.build()
     return mol
+
+
+def build_rhf_reference_mf(mol: gto.Mole, rhf_result: RHFResult) -> tuple[scf.RHF, np.ndarray]:
+    mf = scf.RHF(mol)
+    nocc = mol.nelectron // 2
+    mo_occ = np.zeros(mol.nao_nr())
+    mo_occ[:nocc] = 2.0
+    mf.mo_coeff = rhf_result.coefficients
+    mf.mo_energy = rhf_result.orbital_energies
+    mf.mo_occ = mo_occ
+    mf.e_tot = rhf_result.energy
+    mf.converged = True
+    return mf, mo_occ
 
 
 def symmetric_orthogonalization(overlap: np.ndarray) -> np.ndarray:
