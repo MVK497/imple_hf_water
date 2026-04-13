@@ -1,0 +1,2271 @@
+\documentclass[UTF8,11pt,fontset=fandol]{ctexbook}
+
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{upquote}
+\usepackage{enumitem}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!60!black,
+  citecolor=blue!50!black
+}
+
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codekw}{RGB}{0,76,153}
+\definecolor{codestr}{RGB}{163,21,21}
+\definecolor{codecom}{RGB}{0,128,0}
+\definecolor{themecolor}{RGB}{27,79,114}
+\definecolor{softblue}{RGB}{239,246,252}
+\definecolor{softgreen}{RGB}{240,248,243}
+\definecolor{softorange}{RGB}{252,245,238}
+\definecolor{warmframe}{RGB}{173,97,47}
+
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestr},
+  commentstyle=\color{codecom},
+  backgroundcolor=\color{codebg},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  numbers=left,
+  numberstyle=\tiny,
+  stepnumber=1,
+  numbersep=8pt
+}
+
+\lstdefinestyle{bashstyle}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  numbers=left,
+  numberstyle=\tiny,
+  stepnumber=1,
+  numbersep=8pt
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\small\color{themecolor}\thepage}
+\fancyhead[LO]{\small\color{black!70}\rightmark}
+\fancyhead[RE]{\small\color{black!70}\leftmark}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parskip}{0.35em}
+
+\newtcolorbox{goalbox}[1][]{
+  enhanced,
+  breakable,
+  colback=softblue,
+  colframe=themecolor,
+  boxrule=0.6pt,
+  arc=2mm,
+  left=2mm,
+  right=2mm,
+  top=1mm,
+  bottom=1mm,
+  fonttitle=\bfseries,
+  title={#1}
+}
+
+\newtcolorbox{resourcebox}[1][]{
+  enhanced,
+  breakable,
+  colback=softgreen,
+  colframe=green!40!black,
+  boxrule=0.6pt,
+  arc=2mm,
+  left=2mm,
+  right=2mm,
+  top=1mm,
+  bottom=1mm,
+  fonttitle=\bfseries,
+  title={#1}
+}
+
+\newtcolorbox{warnbox}[1][]{
+  enhanced,
+  breakable,
+  colback=softorange,
+  colframe=warmframe,
+  boxrule=0.6pt,
+  arc=2mm,
+  left=2mm,
+  right=2mm,
+  top=1mm,
+  bottom=1mm,
+  fonttitle=\bfseries,
+  title={#1}
+}
+
+\tikzset{
+  flowbox/.style={
+    rectangle,
+    rounded corners=2mm,
+    draw=themecolor,
+    fill=softblue,
+    thick,
+    align=center,
+    minimum width=3.5cm,
+    minimum height=0.95cm,
+    inner sep=6pt
+  },
+  flowalt/.style={
+    rectangle,
+    rounded corners=2mm,
+    draw=green!40!black,
+    fill=softgreen,
+    thick,
+    align=center,
+    minimum width=3.7cm,
+    minimum height=0.95cm,
+    inner sep=6pt
+  },
+  flowwarn/.style={
+    diamond,
+    aspect=2.0,
+    draw=warmframe,
+    fill=softorange,
+    thick,
+    align=center,
+    inner sep=2pt
+  },
+  flowarrow/.style={
+    -{Latex[length=2.6mm,width=2mm]},
+    thick,
+    draw=black!70
+  }
+}
+
+\title{从 Hartree 到电子结构小项目：\\
+\large 面向量子化学与 Python 零基础的逐步复现教程}
+\author{simple\_hf\_water 项目教学讲义}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\part{第一部分：先把 HF 骨架真正学明白}
+
+\chapter{这一次我们到底要讲到哪里}
+
+这份讲义现在分成两大部分。第一部分还是严格按零基础节奏来，从 Hartree 一路走到 RHF、DIIS、UHF；第二部分再在这个骨架上继续往前，补上相关能、DFT、结构优化、扫描和频率分析。
+
+整个项目的主线现在是：
+\begin{equation}
+\begin{aligned}
+\text{Hartree}
+&\longrightarrow
+\text{Hartree--Fock}
+\longrightarrow
+\text{RHF/UHF}
+\longrightarrow
+\text{MP2/UMP2} \\
+&\longrightarrow
+\text{RKS/UKS}
+\longrightarrow
+\text{CCSD}
+\longrightarrow
+\text{优化/扫描/频率}.
+\end{aligned}
+\end{equation}
+
+\begin{goalbox}[阅读路线]
+如果你是第一次接触量子化学编程，请一定先把前半部分学扎实，再进入后半部分。因为 MP2、DFT、CCSD、优化这些模块虽然名字不同，但几乎都建立在同一套基础对象上：分子对象、积分、轨道系数、密度矩阵、Fock/KS 矩阵、收敛控制和 PySCF 接口。
+\end{goalbox}
+
+这份教程真正想做到的是：
+\begin{enumerate}[label=\arabic*.]
+  \item 让你知道 Hartree 和 Hartree--Fock 到底在解决什么问题。
+  \item 让你把 RHF 的每一个数学对象，和 Python 里的变量一一对应起来。
+  \item 让你把 \texttt{simple\_hf/geometry.py}、\texttt{simple\_hf/rhf.py}、\texttt{simple\_hf/uhf.py} 这些文件读懂。
+  \item 让你明白程序真正的执行路线：命令行参数是如何一路走到 RHF/UHF、MP2、DFT、优化和频率模块里的。
+  \item 让你看到“一个小型量子化学程序”是怎样从单点能，逐步成长到结构分析工具箱的。
+\end{enumerate}
+
+它不是“看完就会背公式”，而是希望你看完后能自己重新敲出一个简化版电子结构程序，并且知道每多加一个功能，代码结构为什么会那样长出来。
+
+\chapter{零基础读者先要建立的三件事}
+
+\section{什么叫“量子化学程序”}
+
+最朴素地说，一个量子化学程序做的是：
+\begin{enumerate}[label=\arabic*.]
+  \item 接收分子结构；
+  \item 选定一种电子结构方法和基组；
+  \item 计算电子能量；
+  \item 在需要时，再进一步计算轨道、梯度、频率等量。
+\end{enumerate}
+
+在我们的项目里，哪怕最后功能很多，这个骨架从来没有变：
+\begin{equation}
+\text{输入分子} + \text{输入方法} \longrightarrow \text{构造矩阵} \longrightarrow \text{迭代求解} \longrightarrow \text{输出结果}.
+\end{equation}
+
+\section{什么叫“用代码复现公式”}
+
+初学者最容易卡住的地方，是明明公式看懂了，却不知道怎么落成代码。这里有一个非常重要的观念：
+
+\begin{quote}
+量子化学程序并不是“把公式原样打进电脑”，而是把公式变成一组矩阵、数组、循环和收敛判据。
+\end{quote}
+
+例如，RHF 中最核心的公式
+\begin{equation}
+\mathbf{F}\mathbf{C} = \mathbf{S}\mathbf{C}\bm{\varepsilon}
+\end{equation}
+在程序里不会以“公式”的样子出现，而会变成：
+\begin{itemize}
+  \item 用 \texttt{overlap} 表示 $\mathbf{S}$；
+  \item 用 \texttt{fock} 表示 $\mathbf{F}$；
+  \item 用 \texttt{coeff} 表示 $\mathbf{C}$；
+  \item 用 \texttt{orbital\_energies} 表示 $\bm{\varepsilon}$ 的对角元。
+\end{itemize}
+
+\section{什么叫“读懂代码”}
+
+对于这一类项目，真正的“读懂”不是指你能从头背出每一行，而是你回答得出下面这些问题：
+\begin{itemize}
+  \item 这一行代码对应哪一个数学量？
+  \item 这个函数的输入和输出分别是什么物理对象？
+  \item 这一段循环为什么必须反复执行？
+  \item 这里为什么需要误差矩阵、收敛阈值、DIIS 缓存？
+\end{itemize}
+
+如果你能回答这些问题，你就已经不是在“抄代码”，而是在真正学习量子化学编程。
+
+\chapter{先补 Python 语法：这份项目到底用到了哪些基础知识}
+
+\section{为什么这一章必须先讲}
+
+如果这份讲义真的是给零基础读者用，那么在讲量子化学程序之前，必须先解决一个更前面的问题：
+
+\begin{quote}
+你是否读得懂 Python 代码本身？
+\end{quote}
+
+很多时候初学者不是败在量子化学公式，而是败在这些最基础的地方：
+\begin{itemize}
+  \item 不知道 \texttt{def} 是什么意思；
+  \item 不知道 \texttt{return} 为什么重要；
+  \item 看不懂 \texttt{list[str]}、\texttt{tuple[int, int]} 这种类型标注；
+  \item 不知道 \texttt{[:, :nocc]} 为什么能切片；
+  \item 看见 \texttt{@dataclass}、\texttt{np.einsum()}、\texttt{strict=True} 就开始紧张。
+\end{itemize}
+
+所以这一章的目标很明确：
+
+\begin{quote}
+不是系统讲完整门 Python，而是把读懂本项目源码所必需的语法一次讲清楚。
+\end{quote}
+
+\section{第一眼先看什么：一段 Python 代码的外形}
+
+来看一个很小的例子：
+
+\begin{lstlisting}[style=pythonstyle]
+def build_density(coefficients: np.ndarray, nocc: int) -> np.ndarray:
+    occupied = coefficients[:, :nocc]
+    return 2.0 * occupied @ occupied.T
+\end{lstlisting}
+
+如果你完全是 Python 小白，请先只认出四个层次：
+
+\begin{enumerate}[label=\arabic*.]
+  \item \texttt{def} 开头，说明这是“定义一个函数”。
+  \item 括号里是输入参数。
+  \item 冒号后面缩进的部分，是函数真正执行的内容。
+  \item \texttt{return} 表示“把结果返回出去”。
+\end{enumerate}
+
+\section{缩进为什么这么重要}
+
+Python 不是靠大括号 \texttt{\{\}} 区分代码块，而是靠缩进。
+
+\begin{lstlisting}[style=pythonstyle]
+if use_diis:
+    diis_error = compute_diis_error(fock, density, s, x)
+    diis_helper.push(fock, diis_error)
+    fock_to_diagonalize = diis_helper.extrapolate()
+else:
+    fock_to_diagonalize = fock
+\end{lstlisting}
+
+这表示：
+\begin{itemize}
+  \item 条件为真时，执行第一块缩进代码；
+  \item 条件为假时，执行 \texttt{else} 那一块。
+\end{itemize}
+
+\section{\texttt{import} 到底在干什么}
+
+项目里一开头经常有：
+\begin{lstlisting}[style=pythonstyle]
+from dataclasses import dataclass
+import numpy as np
+from pyscf import gto, scf
+\end{lstlisting}
+
+它们分别表示：
+\begin{itemize}
+  \item 从 \texttt{dataclasses} 里导入 \texttt{dataclass}
+  \item 导入 \texttt{numpy} 并起别名 \texttt{np}
+  \item 从 \texttt{pyscf} 中取出 \texttt{gto} 和 \texttt{scf}
+\end{itemize}
+
+\section{\texttt{@dataclass} 是什么}
+
+项目里经常有：
+\begin{lstlisting}[style=pythonstyle]
+@dataclass
+class RHFResult:
+    energy: float
+    electronic_energy: float
+    nuclear_repulsion: float
+\end{lstlisting}
+
+你可以先把它理解成：
+
+\begin{quote}
+一个专门拿来装数据的类。
+\end{quote}
+
+它的作用不是让程序“更神秘”，而是让结果对象更整齐、更适合后续复用。
+
+\section{类型标注要怎么看}
+
+例如：
+\begin{lstlisting}[style=pythonstyle]
+def parse_atom_string(atom: str) -> tuple[list[str], np.ndarray]:
+\end{lstlisting}
+
+你可以把它拆成：
+\begin{itemize}
+  \item \texttt{atom: str}：输入预计是字符串；
+  \item 箭头 \texttt{->} 后面：返回值类型；
+  \item \texttt{tuple[list[str], np.ndarray]}：返回一个二元组。
+\end{itemize}
+
+类型标注最主要是帮助人读代码，不是增加额外负担。
+
+\section{赋值、\texttt{None} 和整数除法}
+
+\begin{lstlisting}[style=pythonstyle]
+h_core = t + v
+nocc = mol.nelectron // 2
+previous_energy = None
+\end{lstlisting}
+
+这里：
+\begin{itemize}
+  \item \texttt{=} 表示把右边结果交给左边变量名；
+  \item \texttt{//} 表示整数除法；
+  \item \texttt{None} 表示“现在还没有一个真正的值”。
+\end{itemize}
+
+\section{条件判断：\texttt{if / elif / else}}
+
+\begin{lstlisting}[style=pythonstyle]
+if method == "rhf":
+    ...
+elif method == "uhf":
+    ...
+else:
+    raise ValueError("Unsupported method")
+\end{lstlisting}
+
+这就是程序分流的基本方式。
+
+\section{循环：\texttt{for} 和 \texttt{range}}
+
+\begin{lstlisting}[style=pythonstyle]
+for iteration in range(1, max_iter + 1):
+    ...
+\end{lstlisting}
+
+这可以读成：
+
+\begin{quote}
+让 \texttt{iteration} 从 1 走到 \texttt{max\_iter}，每次都执行一次循环体。
+\end{quote}
+
+\section{列表、元组、字典在项目里的角色}
+
+\subsection*{列表 list}
+
+\begin{lstlisting}[style=pythonstyle]
+history: list[float] = []
+\end{lstlisting}
+
+列表适合装“会不断增长的一串东西”，比如 SCF 每一步的能量历史。
+
+\subsection*{元组 tuple}
+
+\begin{lstlisting}[style=pythonstyle]
+def parse_scan_atoms(text: str) -> tuple[int, ...]:
+\end{lstlisting}
+
+元组更适合表示“固定位置的一组值”，比如键长、键角、二面角的原子编号。
+
+\subsection*{字典 dict}
+
+\begin{lstlisting}[style=pythonstyle]
+SUPPORTED_BASIS_ALIASES = {
+    "sto-3g": "sto-3g",
+    "6-31g*": "6-31g(d)",
+}
+\end{lstlisting}
+
+字典就是键值映射表。
+
+\section{列表推导式是什么}
+
+项目里有：
+\begin{lstlisting}[style=pythonstyle]
+cleaned = [line.strip() for line in lines if line.strip()]
+\end{lstlisting}
+
+你可以把它先翻译成普通话：
+
+\begin{quote}
+把每一行去掉空白；如果去掉之后不是空行，就保留下来。
+\end{quote}
+
+\section{切片是什么}
+
+项目中非常常见：
+\begin{lstlisting}[style=pythonstyle]
+occupied = coefficients[:, :nocc]
+mo_occ[:nocc] = 2.0
+\end{lstlisting}
+
+这里：
+\begin{itemize}
+  \item \texttt{:} 表示“这一维全取”；
+  \item \texttt{:nocc} 表示“从开头取到第 \texttt{nocc} 个之前”。
+\end{itemize}
+
+\section{矩阵乘法和 NumPy}
+
+\begin{lstlisting}[style=pythonstyle]
+return 2.0 * occupied @ occupied.T
+\end{lstlisting}
+
+\texttt{@} 表示矩阵乘法。  
+\texttt{.T} 表示转置。  
+\texttt{np.array}、\texttt{np.linalg.eigh}、\texttt{np.linalg.norm} 都说明我们在用 NumPy 做线性代数。
+
+\section{\texttt{np.einsum} 不要怕}
+
+例如：
+\begin{lstlisting}[style=pythonstyle]
+coulomb = np.einsum("ls,mnls->mn", density, eri, optimize=True)
+\end{lstlisting}
+
+你可以先把它理解成：
+
+\begin{quote}
+一种把多指标求和压缩写成一行的工具。
+\end{quote}
+
+现在先知道它在做“积分张量缩并”就够了，后面随着经验增长再回头专门理解它。
+
+\section{异常处理：\texttt{raise} 和 \texttt{try/except}}
+
+\begin{lstlisting}[style=pythonstyle]
+raise ValueError("Unsupported basis")
+\end{lstlisting}
+
+表示程序要明确报错，而不是静悄悄继续算。
+
+\begin{lstlisting}[style=pythonstyle]
+try:
+    coefficients = np.linalg.solve(b_matrix, rhs)[:-1]
+except np.linalg.LinAlgError:
+    return self.fock_matrices[-1]
+\end{lstlisting}
+
+表示先尝试执行，如果失败，就走备用方案。
+
+\section{读后面源码时的一个固定顺序}
+
+从这一章开始，建议你以后每次看到一段新代码，都按这个顺序读：
+
+\begin{enumerate}[label=\arabic*.]
+  \item 这是一段定义，还是一段执行？
+  \item 输入参数是什么？
+  \item 返回值是什么？
+  \item 缩进层级怎么分块？
+  \item 变量名分别对应什么物理量？
+\end{enumerate}
+
+\chapter{程序的总路线：从命令行到求解器}
+
+\section{最外层入口脚本只有 7 行}
+
+先看整个项目最外层的入口：
+
+\lstinputlisting[style=pythonstyle]{../rhf_sto3g_water.py}
+
+这个文件非常短，但它的作用非常重要。它告诉我们：
+
+\begin{itemize}
+  \item 真正的主逻辑不在这个脚本里；
+  \item 这个脚本只负责启动程序；
+  \item 所有实际功能都在 \texttt{simple\_hf.cli} 的 \texttt{main()} 中。
+\end{itemize}
+
+这是一种很好的结构设计。因为以后无论你给项目增加多少方法，入口都不需要改动。
+
+\section{命令行是如何被组织起来的}
+
+接下来要看 \texttt{simple\_hf/cli.py} 中最前面的参数解析部分：
+
+\lstinputlisting[style=pythonstyle,firstline=31,lastline=165]{../simple_hf/cli.py}
+
+请先不要害怕代码长。对初学者来说，这一大段其实只在做两件事：
+
+\begin{enumerate}[label=\arabic*.]
+  \item 定义用户可以输入哪些参数；
+  \item 给这些参数设置默认值和帮助说明。
+\end{enumerate}
+
+对我们这一册最重要的参数有：
+\begin{itemize}
+  \item \texttt{--xyz}：从 XYZ 文件读分子；
+  \item \texttt{--geometry}：直接写内联几何；
+  \item \texttt{--basis}：选择基组；
+  \item \texttt{--method}：选择 \texttt{rhf} 或 \texttt{uhf}；
+  \item \texttt{--charge}：分子电荷；
+  \item \texttt{--spin}：自旋多重度相关输入，这里用的是 $2S=N_\alpha-N_\beta$；
+  \item \texttt{--max-iter}、\texttt{--energy-tol}、\texttt{--density-tol}：SCF 收敛控制；
+  \item \texttt{--no-diis}、\texttt{--diis-space}：是否开启 DIIS。
+\end{itemize}
+
+虽然这个 \texttt{parser} 里已经有很多“后续章节才会用到”的选项，比如 \texttt{--scan}、\texttt{--frequency} 等，但你现在只需要把它看作：
+
+\begin{quote}
+程序和用户沟通的总开关面板。
+\end{quote}
+
+\section{输入几何是如何被整理成统一对象的}
+
+继续看 \texttt{cli.py} 中真正把参数转成“分子描述”的部分：
+
+\lstinputlisting[style=pythonstyle,firstline=168,lastline=210]{../simple_hf/cli.py}
+
+这一段特别值得初学者学，因为它体现了一个很常见的工程思想：
+
+\begin{quote}
+无论用户是从文件输入、命令行输入，还是完全不输入，都要尽快变成同一种内部数据结构。
+\end{quote}
+
+这里那个统一的数据结构就是 \texttt{MoleculeSpec}。有了它之后，后面的代码就不用关心“用户到底是怎么输入几何的”。
+
+\section{主函数里 RHF/UHF 的分发路线}
+
+下面是和本册最相关的主流程分发部分：
+
+\lstinputlisting[style=pythonstyle,firstline=587,lastline=740]{../simple_hf/cli.py}
+
+请你重点抓住这一段代码里的执行顺序：
+
+\begin{enumerate}[label=\arabic*.]
+  \item 建立 \texttt{parser}；
+  \item 读取 \texttt{args}；
+  \item 调用 \texttt{build\_spec\_from\_args(args)} 变成 \texttt{spec}；
+  \item 调用 \texttt{build\_molecule(spec)} 变成 PySCF 的 \texttt{mol}；
+  \item 根据 \texttt{args.method} 决定是跑 \texttt{run\_rhf} 还是 \texttt{run\_uhf}；
+  \item 最后调用打印函数输出结果。
+\end{enumerate}
+
+你可以把整个项目最核心的调用链记成一句话：
+\begin{equation}
+\texttt{main()} \longrightarrow \texttt{build\_spec\_from\_args()} \longrightarrow \texttt{build\_molecule()} \longrightarrow \texttt{run\_rhf()/run\_uhf()}.
+\end{equation}
+
+只要这个调用链在脑子里清楚，后面读代码就不会乱。
+
+\chapter{先把“分子输入层”讲透：geometry.py}
+
+\section{为什么一定要有 geometry.py}
+
+很多初学者会以为量子化学程序的重点全在 Fock 矩阵。其实不是。一个程序要想稳定运行，首先必须把输入整理干净。
+
+我们的 \texttt{geometry.py} 就是在负责这些事情：
+\begin{itemize}
+  \item 单位换算；
+  \item 基组名称规范化；
+  \item 内联几何的解析；
+  \item XYZ 文件读取；
+  \item 默认水分子构型；
+  \item 一些后续结构功能会用到的几何工具。
+\end{itemize}
+
+\section{最前面的常数和数据类}
+
+\lstinputlisting[style=pythonstyle,firstline=1,lastline=27]{../simple_hf/geometry.py}
+
+这一段要讲清楚四个概念。
+
+\subsection*{1. 为什么要有 \texttt{BOHR\_TO\_ANGSTROM}}
+
+量子化学里最常见的长度单位有两个：
+\begin{itemize}
+  \item Bohr
+  \item Angstrom
+\end{itemize}
+
+程序内部很多量在原子单位下更自然，而用户输入几何时通常更习惯 Angstrom。所以单位转换常数是基础设施，不是可有可无的小装饰。
+
+\subsection*{2. \texttt{MoleculeSpec} 到底是什么}
+
+\texttt{MoleculeSpec} 是一个“分子描述对象”。它不是 PySCF 的分子对象，也不是电子结构结果，而只是把下面这些输入绑在一起：
+\begin{itemize}
+  \item 原子坐标字符串 \texttt{atom}
+  \item 基组 \texttt{basis}
+  \item 电荷 \texttt{charge}
+  \item 自旋 \texttt{spin}
+  \item 单位 \texttt{unit}
+  \item 标题 \texttt{title}
+\end{itemize}
+
+你可以把它理解成“分子在进入求解器之前的统一包装盒”。
+
+\subsection*{3. 为什么要有基组别名表}
+
+\texttt{SUPPORTED\_BASIS\_ALIASES} 看起来很简单，但它体现的是“程序输入要容错”的思想。例如：
+\begin{itemize}
+  \item 用户可能写 \texttt{6-31G*}
+  \item 程序内部只想统一成 \texttt{6-31g(d)}
+\end{itemize}
+
+于是就需要别名映射。
+
+\subsection*{4. 这里顺手复习一下 Python 语法}
+
+这一小段代码里其实已经包含了很多项目会反复出现的基础语法：
+\begin{itemize}
+  \item \texttt{@dataclass}：声明数据类；
+  \item \texttt{class MoleculeSpec:}：定义一个类；
+  \item \texttt{atom: str}：字段的类型标注；
+  \item 花括号 \texttt{\{\}}：定义字典；
+  \item \texttt{"6-31g*": "6-31g(d)"}：字典里的键值对。
+\end{itemize}
+
+所以你在读源码时，最好同时问自己两个问题：
+\begin{enumerate}[label=\arabic*.]
+  \item 这段代码在物理上想表达什么？
+  \item 这段代码在 Python 语法上属于什么结构？
+\end{enumerate}
+
+\section{输入规范化与单位换算}
+
+\lstinputlisting[style=pythonstyle,firstline=30,lastline=53]{../simple_hf/geometry.py}
+
+这几段函数虽然不复杂，但非常值得逐行读。
+
+\subsection*{\texttt{normalize\_basis\_name}}
+
+它做的是：
+\begin{enumerate}[label=\arabic*.]
+  \item 去掉首尾空格；
+  \item 转成小写；
+  \item 检查是不是允许的基组名字；
+  \item 如果是别名，就映射到规范写法。
+\end{enumerate}
+
+这就是非常标准的“输入清洗”。
+
+\subsection*{\texttt{convert\_coords}}
+
+这一段反映的是很典型的工程思维：
+\begin{itemize}
+  \item 如果输入和输出单位一样，直接返回拷贝；
+  \item 如果是 Angstrom 到 Bohr，就乘转换因子；
+  \item 如果是 Bohr 到 Angstrom，也一样；
+  \item 其余情况一律报错。
+\end{itemize}
+
+这种写法的优点是：规则写死，行为清楚，不会悄悄产生模糊结果。
+
+\subsection*{\texttt{convert\_length\_value}}
+
+这个函数很有意思。它不是直接写一条“标量换算公式”，而是先把标量包装成一个一维坐标，再复用 \texttt{convert\_coords}。这种写法的好处是：
+
+\begin{quote}
+尽量不要重复维护两套转换逻辑。
+\end{quote}
+
+\section{字符串几何如何变成数值数组}
+
+\lstinputlisting[style=pythonstyle,firstline=56,lastline=100]{../simple_hf/geometry.py}
+
+这一段是初学者一定要读懂的“字符串处理 + 数值化”代码。
+
+\subsection*{\texttt{\_normalize\_geometry\_lines}}
+
+这个函数先做两件事：
+\begin{itemize}
+  \item 去掉空行和多余空白；
+  \item 检查每一行至少有“元素符号 + 三个坐标”。
+\end{itemize}
+
+也就是说，它在做最基本的输入合法性检查。
+
+\subsection*{\texttt{parse\_inline\_geometry}}
+
+用户可能输入：
+\begin{lstlisting}[style=bashstyle]
+--geometry "O 0 0 0; H 0 -0.757 0.586; H 0 0.757 0.586"
+\end{lstlisting}
+
+程序要把里面的分号变成换行，再交给统一的规范化函数处理。
+
+\subsection*{\texttt{parse\_atom\_string}}
+
+这个函数特别重要。因为从这一刻开始，原本的文本几何被拆成了两个真正可计算的对象：
+\begin{itemize}
+  \item \texttt{symbols}：元素符号列表
+  \item \texttt{coords}：形状为 \texttt{(natom, 3)} 的 NumPy 数组
+\end{itemize}
+
+这一步就是从“文本输入”转向“数值计算”的分界线。
+
+如果你是 Python 小白，这里还应该顺手注意两个语法点：
+\begin{itemize}
+  \item \texttt{for line in lines:} 是逐个遍历一组数据；
+  \item \texttt{return symbols, np.array(...)} 表示函数一次返回两个对象，外面可以用两个变量分别接收。
+\end{itemize}
+
+\subsection*{\texttt{format\_atom\_string}}
+
+它做的正好是反操作：把元素和坐标重新拼成字符串。这对于后面优化、扫描时输出新几何非常有用。
+
+\section{这一册真正需要的几何函数其实不多}
+
+你会发现 \texttt{geometry.py} 后面还有很多函数，比如：
+\begin{itemize}
+  \item \texttt{angle\_radians}
+  \item \texttt{bond\_length}
+  \item \texttt{set\_angle\_rigid}
+  \item \texttt{set\_bond\_length\_rigid}
+  \item \texttt{set\_dihedral\_rigid}
+\end{itemize}
+
+这些函数主要是为后面的扫描与优化服务。因为这一册只讲到 UHF，所以你现在不用强迫自己把它们全吃透。
+
+但有一件事你可以先知道：
+
+\begin{quote}
+\texttt{geometry.py} 不是“只管读输入”的文件，它后来还逐渐成长成了“结构工具箱”。
+\end{quote}
+
+\section{读取 XYZ 文件与默认水分子}
+
+\lstinputlisting[style=pythonstyle,firstline=279,lastline=311]{../simple_hf/geometry.py}
+
+这里的两段代码分别负责：
+\begin{itemize}
+  \item 从 XYZ 文件读取几何；
+  \item 在用户不提供任何输入时，自动构造一个标准水分子。
+\end{itemize}
+
+\subsection*{\texttt{read\_xyz\_geometry}}
+
+它按照 XYZ 的常见格式做：
+\begin{enumerate}[label=\arabic*.]
+  \item 第一行读原子数；
+  \item 第二行读标题；
+  \item 后面读坐标行；
+  \item 最后交给 \texttt{\_normalize\_geometry\_lines} 做进一步规范化。
+\end{enumerate}
+
+\subsection*{\texttt{default\_water\_spec}}
+
+这段代码非常有教学味道，因为它让你在完全不输入任何文件时，也能马上跑出一个真实分子结果。这样初学者第一次运行程序的门槛会低很多。
+
+\chapter{RHF 理论：从 Hartree 走向真正可运行的自洽场}
+
+\section{为什么 Hartree 不够}
+
+Hartree 近似把总波函数写成轨道乘积：
+\begin{equation}
+\Psi_H = \prod_i \phi_i(\mathbf{x}_i).
+\end{equation}
+
+它的问题是：电子是费米子，而这个乘积形式没有自动满足交换反对称性。
+
+Hartree--Fock 通过 Slater 行列式修正了这一点，因此在平均场层次上更加物理可靠。
+
+\section{RHF 的矩阵方程}
+
+在闭壳层 RHF 中，我们最终要求解的是
+\begin{equation}
+\mathbf{F}\mathbf{C} = \mathbf{S}\mathbf{C}\bm{\varepsilon}.
+\end{equation}
+
+这里最重要的对象分别是：
+\begin{itemize}
+  \item $\mathbf{S}$：AO 重叠矩阵；
+  \item $\mathbf{h}$：一电子哈密顿量矩阵；
+  \item $\mathbf{D}$：密度矩阵；
+  \item $\mathbf{F}$：Fock 矩阵；
+  \item $\mathbf{C}$：分子轨道系数矩阵；
+  \item $\bm{\varepsilon}$：轨道能量。
+\end{itemize}
+
+程序中所有 RHF 代码，本质上都在围绕这六个对象展开。
+
+\chapter{把 RHF 源码逐段讲透：rhf.py}
+
+\section{结果对象为什么先定义成 dataclass}
+
+\lstinputlisting[style=pythonstyle,firstline=11,lastline=20]{../simple_hf/rhf.py}
+
+\texttt{RHFResult} 是一个结果容器。它把 RHF 输出中最重要的量集中在一起：
+\begin{itemize}
+  \item \texttt{energy}：总能量
+  \item \texttt{electronic\_energy}：电子能
+  \item \texttt{nuclear\_repulsion}：核排斥能
+  \item \texttt{orbital\_energies}：轨道能
+  \item \texttt{coefficients}：分子轨道系数
+  \item \texttt{density}：最终密度矩阵
+  \item \texttt{iterations}：SCF 迭代步数
+  \item \texttt{history}：每一步总能量
+\end{itemize}
+
+为什么这样设计很重要？因为程序跑完之后，你不只想打印一个总能量，而是希望保留后面模块继续需要的全部信息。
+
+如果你以前还没接触过 Python 类，那现在可以先把 \texttt{RHFResult} 理解成：
+
+\begin{quote}
+一个带名字的结果盒子，里面整齐地装着 RHF 算完之后最重要的所有量。
+\end{quote}
+
+\section{DIIS 缓冲器是怎么设计的}
+
+\lstinputlisting[style=pythonstyle,firstline=23,lastline=62]{../simple_hf/rhf.py}
+
+这段代码对初学者来说有点“吓人”，但其实可以拆得很清楚。
+
+\subsection*{\texttt{\_\_post\_init\_\_}}
+
+这里建立了两个列表：
+\begin{itemize}
+  \item \texttt{fock\_matrices}
+  \item \texttt{error\_matrices}
+\end{itemize}
+
+它们的意义是：保留最近若干步的 Fock 和误差，供 DIIS 做线性组合。
+
+\subsection*{\texttt{push}}
+
+每次 SCF 新产生一个 Fock，就把它和对应误差都压进去。如果数量超过上限，就把最旧的弹掉。
+
+这说明 DIIS 不是在用“全部历史”，而是在用“最近的一个滑动窗口”。
+
+这里顺便也能练三条基础语法：
+\begin{itemize}
+  \item \texttt{append(...)}：把新元素加到列表末尾；
+  \item \texttt{len(...)}：取列表长度；
+  \item \texttt{pop(0)}：删除最前面的旧元素。
+\end{itemize}
+
+\subsection*{\texttt{extrapolate}}
+
+这一段是 DIIS 的数学核心。它建立了一个带约束的线性方程组：
+\begin{equation}
+\begin{pmatrix}
+\mathbf{B} & -\mathbf{1} \\
+-\mathbf{1}^T & 0
+\end{pmatrix}
+\begin{pmatrix}
+\mathbf{c} \\
+\lambda
+\end{pmatrix}
+=
+\begin{pmatrix}
+\mathbf{0} \\
+-1
+\end{pmatrix}.
+\end{equation}
+
+在代码里：
+\begin{itemize}
+  \item \texttt{b\_matrix} 就是这个大矩阵；
+  \item \texttt{rhs} 是右端项；
+  \item \texttt{coefficients} 是求出来的 DIIS 线性组合系数。
+\end{itemize}
+
+如果矩阵奇异，代码会回退到“直接使用最新 Fock”，这也是很典型的稳健性设计。
+
+\section{把 MoleculeSpec 变成 PySCF 分子对象}
+
+\lstinputlisting[style=pythonstyle,firstline=65,lastline=73]{../simple_hf/rhf.py}
+
+这段非常关键，因为从这里开始，项目自己的输入结构正式转化为 PySCF 可识别对象。
+
+其中：
+\begin{itemize}
+  \item \texttt{mol.atom} 接收坐标字符串；
+  \item \texttt{mol.unit} 接收单位；
+  \item \texttt{mol.basis} 接收基组；
+  \item \texttt{mol.charge} 和 \texttt{mol.spin} 给出电子数约束；
+  \item \texttt{mol.build()} 真正完成分子构建。
+\end{itemize}
+
+如果你第一次见到 \texttt{mol.atom = spec.atom} 这种写法，可以把它简单理解为：
+
+\begin{quote}
+把 \texttt{spec} 里记录的信息，一项一项抄进 \texttt{mol} 这个对象里。
+\end{quote}
+
+\section{为什么还要有 build\_rhf\_reference\_mf}
+
+\lstinputlisting[style=pythonstyle,firstline=76,lastline=86]{../simple_hf/rhf.py}
+
+这一段不是 RHF 主循环的一部分，而是为后续模块准备的“桥接器”。它的作用是：
+
+\begin{quote}
+把我们自己算出来的 RHF 结果，重新装配成一个 PySCF 的 \texttt{mf} 对象。
+\end{quote}
+
+这样做的好处是：
+\begin{itemize}
+  \item 前面的 SCF 我们自己写，便于教学；
+  \item 后面的梯度、Hessian、相关方法又可以继续复用 PySCF 生态。
+\end{itemize}
+
+\section{正交化、密度矩阵和 Fock 矩阵}
+
+\lstinputlisting[style=pythonstyle,firstline=89,lastline=113]{../simple_hf/rhf.py}
+
+这一小段几乎就是 RHF 的数学骨架。
+
+\subsection*{\texttt{symmetric\_orthogonalization}}
+
+它把重叠矩阵 $\mathbf{S}$ 做本征分解：
+\begin{equation}
+\mathbf{S} = \mathbf{U}\bm{\Lambda}\mathbf{U}^T,
+\end{equation}
+然后构造
+\begin{equation}
+\mathbf{X}=\mathbf{U}\bm{\Lambda}^{-1/2}\mathbf{U}^T.
+\end{equation}
+
+这样我们就能把广义本征值问题变成普通本征值问题。
+
+\subsection*{\texttt{build\_density}}
+
+闭壳层 RHF 中：
+\begin{equation}
+\mathbf{D}=2\mathbf{C}_{\mathrm{occ}}\mathbf{C}_{\mathrm{occ}}^T.
+\end{equation}
+
+代码里直接把前 \texttt{nocc} 个轨道取出来，相乘后再乘 2。
+
+这里的切片
+\begin{lstlisting}[style=pythonstyle]
+coefficients[:, :nocc]
+\end{lstlisting}
+请你一定练熟。它表示：
+\begin{itemize}
+  \item 所有行都保留；
+  \item 列只取前 \texttt{nocc} 个。
+\end{itemize}
+
+这正好对应“取出占据轨道”。
+
+\subsection*{\texttt{build\_fock}}
+
+这一段就是 AO 基中的
+\begin{equation}
+\mathbf{F}=\mathbf{h}+\mathbf{J}-\frac{1}{2}\mathbf{K}.
+\end{equation}
+
+初学者尤其要注意：这里的 \texttt{einsum} 不是“炫技”，而是把多重指标求和直接写出来的一种非常自然的方式。
+
+如果你目前还完全看不懂 \texttt{einsum}，不要慌。你现在只要先抓住这一层：
+
+\begin{quote}
+\texttt{build\_fock} 的输入是 \texttt{h\_core}、双电子积分和密度，输出是新的 Fock 矩阵。
+\end{quote}
+
+先把函数的输入输出角色搞清楚，再回头慢慢理解内部张量缩并，会更适合零基础学习。
+
+\subsection*{\texttt{compute\_diis\_error}}
+
+它计算的是
+\begin{equation}
+\mathbf{e}=\mathbf{X}^T(\mathbf{FDS}-\mathbf{SDF})\mathbf{X}.
+\end{equation}
+
+当 SCF 真正收敛时，这个误差矩阵应接近零。
+
+\subsection*{\texttt{diagonalize\_fock}}
+
+它先把 Fock 变换到正交基：
+\begin{equation}
+\mathbf{F}'=\mathbf{X}^T\mathbf{F}\mathbf{X},
+\end{equation}
+然后再对角化得到轨道能和系数。
+
+\section{为什么 RHF 必须先检查闭壳层条件}
+
+\lstinputlisting[style=pythonstyle,firstline=116,lastline=125]{../simple_hf/rhf.py}
+
+RHF 假设的是每个空间轨道有一对自旋相反电子，因此它要求：
+\begin{itemize}
+  \item \texttt{spin = 0}
+  \item 总电子数是偶数
+\end{itemize}
+
+这段输入检查其实是在保护整个程序的物理前提。
+
+\section{最关键的函数：run\_rhf}
+
+\lstinputlisting[style=pythonstyle,firstline=128,lastline=189]{../simple_hf/rhf.py}
+
+这是本项目第一重要的函数。你应该把它当成“RHF 的完整算法说明书”。
+
+\subsection*{第一步：拿积分}
+
+代码一开始：
+\begin{itemize}
+  \item \texttt{s = mol.intor("int1e\_ovlp")}：重叠积分
+  \item \texttt{t = mol.intor("int1e\_kin")}：动能积分
+  \item \texttt{v = mol.intor("int1e\_nuc")}：核吸引积分
+  \item \texttt{eri = mol.intor("int2e")}：双电子积分
+\end{itemize}
+
+这是从抽象公式走向可计算矩阵的关键一步。
+
+\subsection*{第二步：构造一电子哈密顿量}
+
+\begin{equation}
+\mathbf{h} = \mathbf{T} + \mathbf{V}.
+\end{equation}
+
+代码里就是
+\begin{lstlisting}[style=pythonstyle]
+h_core = t + v
+\end{lstlisting}
+
+\subsection*{第三步：给一个初始密度}
+
+程序先对角化 \texttt{h\_core}，再用得到的占据轨道构造初始密度。这是一种很常见的初猜。
+
+这里最好在脑子里把动作拆成两步：
+\begin{enumerate}[label=\arabic*.]
+  \item 先猜一套轨道；
+  \item 再由轨道生成一套密度。
+\end{enumerate}
+
+也就是说，程序并不是“凭空猜密度”，而是“先通过一电子哈密顿量猜轨道，再由轨道推出密度”。
+
+\subsection*{第四步：进入 SCF 循环}
+
+循环里的逻辑必须真正理解：
+\begin{enumerate}[label=\arabic*.]
+  \item 用旧密度生成 Fock；
+  \item 如果启用 DIIS，就用误差矩阵做外推；
+  \item 对角化得到新轨道；
+  \item 用新轨道生成新密度；
+  \item 用新密度再生成一次新 Fock；
+  \item 计算新总能量；
+  \item 检查能量和密度是否收敛。
+\end{enumerate}
+
+对第一次接触数值迭代的读者来说，可以把整个 SCF 循环先想成一句特别朴素的话：
+
+\begin{quote}
+先拿当前答案生成一个更好的答案，再拿更好的答案继续修正自己，直到变化足够小。
+\end{quote}
+
+\subsection*{第五步：为什么能量公式前面有 \texorpdfstring{$1/2$}{1/2}}
+
+\begin{equation}
+E_{\mathrm{elec}}
+=
+\frac{1}{2}\sum_{\mu\nu}D_{\mu\nu}(h_{\mu\nu}+F_{\mu\nu}).
+\end{equation}
+
+这个 $\frac{1}{2}$ 是为了避免双计数双电子相互作用。很多初学者第一次实现 RHF 时最容易在这里写错。
+
+\subsection*{第六步：返回 RHFResult}
+
+一旦收敛，函数不会只返回一个数，而是返回一个结构化结果对象。这使得后面：
+\begin{itemize}
+  \item MP2
+  \item CCSD
+  \item 频率分析
+\end{itemize}
+都可以继续复用 RHF 轨道与密度。
+
+\chapter{RHF 跑通之后，为什么还要学 UHF}
+
+\section{闭壳层体系和开壳层体系}
+
+RHF 很适合像水分子这种闭壳层体系，但遇到 OH 自由基这样的开壳层体系时，$\alpha$ 和 $\beta$ 电子数不再相同。
+
+如果你还强行用 RHF，就会把体系的真实自旋结构压扁。
+
+\section{UHF 的基本思想}
+
+UHF 的核心思想只有一句话：
+
+\begin{quote}
+让 $\alpha$ 和 $\beta$ 电子拥有各自独立的轨道、密度矩阵和 Fock 矩阵。
+\end{quote}
+
+数学上它对应：
+\begin{equation}
+\mathbf{F}^{\alpha}=\mathbf{h}+\mathbf{J}[\mathbf{D}^{\alpha}+\mathbf{D}^{\beta}]-\mathbf{K}[\mathbf{D}^{\alpha}],
+\end{equation}
+\begin{equation}
+\mathbf{F}^{\beta}=\mathbf{h}+\mathbf{J}[\mathbf{D}^{\alpha}+\mathbf{D}^{\beta}]-\mathbf{K}[\mathbf{D}^{\beta}].
+\end{equation}
+
+和 RHF 相比，最大的变化就是：一个密度矩阵变成了两个。
+
+\chapter{把 UHF 源码逐段讲透：uhf.py}
+
+\section{结果对象比 RHF 多了什么}
+
+\lstinputlisting[style=pythonstyle,firstline=16,lastline=33]{../simple_hf/uhf.py}
+
+\texttt{UHFResult} 比 \texttt{RHFResult} 多出来的主要有：
+\begin{itemize}
+  \item \texttt{orbital\_energies\_alpha}
+  \item \texttt{orbital\_energies\_beta}
+  \item \texttt{coefficients\_alpha}
+  \item \texttt{coefficients\_beta}
+  \item \texttt{density\_alpha}
+  \item \texttt{density\_beta}
+  \item \texttt{nalpha}, \texttt{nbeta}
+  \item \texttt{s2}, \texttt{expected\_s2}, \texttt{spin\_contamination}
+\end{itemize}
+
+这正好对应 UHF 相比 RHF 的两个新主题：
+\begin{enumerate}[label=\arabic*.]
+  \item 自旋分辨的轨道与密度；
+  \item 自旋污染分析。
+\end{enumerate}
+
+\section{单自旋密度矩阵}
+
+\lstinputlisting[style=pythonstyle,firstline=36,lastline=40]{../simple_hf/uhf.py}
+
+这段函数和 RHF 的 \texttt{build\_density} 非常像，但不再乘 2。原因很简单：
+
+\begin{quote}
+这里一个密度矩阵只对应一个自旋分量，不再是成对占据。
+\end{quote}
+
+所以：
+\begin{equation}
+\mathbf{D}^{\alpha}=\mathbf{C}^{\alpha}_{\mathrm{occ}}(\mathbf{C}^{\alpha}_{\mathrm{occ}})^T,
+\end{equation}
+\begin{equation}
+\mathbf{D}^{\beta}=\mathbf{C}^{\beta}_{\mathrm{occ}}(\mathbf{C}^{\beta}_{\mathrm{occ}})^T.
+\end{equation}
+
+所以从代码结构上看，RHF 和 UHF 的关键差异之一就是：
+\begin{itemize}
+  \item RHF 只有一个密度矩阵，而且要乘 2；
+  \item UHF 有两个自旋分辨的密度矩阵，而且都不乘 2。
+\end{itemize}
+
+\section{UHF 的 Fock 矩阵是如何构造的}
+
+\lstinputlisting[style=pythonstyle,firstline=43,lastline=55]{../simple_hf/uhf.py}
+
+这一段是 UHF 的核心公式翻译。
+
+\subsection*{为什么 Coulomb 用总密度}
+
+电子所感受到的静电排斥，并不区分对方是 $\alpha$ 还是 $\beta$，所以 Coulomb 项使用总密度：
+\begin{equation}
+\mathbf{D}^{\mathrm{tot}}=\mathbf{D}^{\alpha}+\mathbf{D}^{\beta}.
+\end{equation}
+
+\subsection*{为什么 Exchange 要分自旋}
+
+交换作用只发生在相同自旋电子之间，所以：
+\begin{itemize}
+  \item $\alpha$ Fock 只减去 $\alpha$ 的交换；
+  \item $\beta$ Fock 只减去 $\beta$ 的交换。
+\end{itemize}
+
+这就是 UHF 与 RHF 在结构上的根本差异。
+
+\section{为什么要把 alpha 和 beta 拼成块矩阵}
+
+\lstinputlisting[style=pythonstyle,firstline=58,lastline=65]{../simple_hf/uhf.py}
+
+很多初学者第一次看到 \texttt{combine\_spin\_blocks} 会问：既然已经有两个 Fock 了，为什么还要拼起来？
+
+答案是：因为项目里想继续复用 RHF 中已经写好的 \texttt{DIISHelper}。而那个 DIIS 缓冲器期望接收的是“单个矩阵”。于是这里把
+\begin{equation}
+\mathbf{F}^{\alpha},\mathbf{F}^{\beta}
+\end{equation}
+拼成一个块对角矩阵：
+\begin{equation}
+\begin{pmatrix}
+\mathbf{F}^{\alpha} & 0 \\
+0 & \mathbf{F}^{\beta}
+\end{pmatrix}.
+\end{equation}
+
+这是一种非常漂亮的复用技巧。
+
+从 Python 语法角度看，这里最值得你认识的是 \texttt{np.block(...)}。你可以先把它理解成：
+
+\begin{quote}
+按照指定布局，把几个小矩阵拼成一个更大的矩阵。
+\end{quote}
+
+\section{输入检查和电子数分配}
+
+\lstinputlisting[style=pythonstyle,firstline=68,lastline=72]{../simple_hf/uhf.py}
+
+PySCF 会根据总电荷和 \texttt{spin} 给出
+\begin{equation}
+(N_{\alpha},N_{\beta}).
+\end{equation}
+
+这个函数做的只是最基本的合法性检查。它提醒我们：
+
+\begin{quote}
+UHF 的输入核心不是“spin 标签本身”，而是最终的 alpha/beta 电子数。
+\end{quote}
+
+\section{\texorpdfstring{$\langle S^2\rangle$}{<S\string^2>} 是怎么计算的}
+
+\lstinputlisting[style=pythonstyle,firstline=75,lastline=97]{../simple_hf/uhf.py}
+
+这是 UHF 里最有“量子化学味道”的一段代码。
+
+\subsection*{为什么要算 \texorpdfstring{$\langle S^2\rangle$}{<S\string^2>}}
+
+因为 UHF 虽然能处理开壳层，但它的单行列式解不一定是严格自旋本征态，所以会出现自旋污染。
+
+\subsection*{代码在做什么}
+
+它先取出占据的 $\alpha$ 和 $\beta$ 轨道，然后计算占据轨道之间的重叠：
+\begin{equation}
+\mathbf{S}_{\mathrm{occ}} = (\mathbf{C}^{\alpha}_{\mathrm{occ}})^T \mathbf{S}\mathbf{C}^{\beta}_{\mathrm{occ}}.
+\end{equation}
+
+再根据公式
+\begin{equation}
+\langle S^2 \rangle = S_z(S_z+1)+N_{\beta}-\sum_{ij}\left|S^{\alpha\beta}_{ij}\right|^2
+\end{equation}
+求出实际的 $\langle S^2\rangle$。
+
+如果你读代码时觉得这一段比较抽象，可以先只抓住三步：
+\begin{enumerate}[label=\arabic*.]
+  \item 先拿出占据的 alpha 轨道；
+  \item 再拿出占据的 beta 轨道；
+  \item 然后用重叠矩阵去计算它们之间的重叠。
+\end{enumerate}
+
+\subsection*{expected\_s2 和 spin\_contamination}
+
+\begin{itemize}
+  \item \texttt{expected\_s2} 是理想自旋本征态该有的值；
+  \item \texttt{spin\_contamination} 是实际值减理想值。
+\end{itemize}
+
+这三个量一起输出，才构成真正有意义的开壳层结果分析。
+
+\section{最关键的函数：run\_uhf}
+
+\lstinputlisting[style=pythonstyle,firstline=100,lastline=201]{../simple_hf/uhf.py}
+
+你应该把这段代码看成“RHF 的双自旋扩展版”。
+
+\subsection*{第一阶段：准备积分与初猜}
+
+它和 RHF 一样先取：
+\begin{itemize}
+  \item \texttt{s}
+  \item \texttt{t}
+  \item \texttt{v}
+  \item \texttt{eri}
+  \item \texttt{h\_core}
+\end{itemize}
+
+接着分别给 $\alpha$ 和 $\beta$ 做初始对角化，并构造两个自旋密度矩阵。
+
+对初学者来说，这里最重要的理解是：
+
+\begin{quote}
+UHF 并不是完全推翻 RHF，而是在 RHF 框架上复制出两条自旋通道。
+\end{quote}
+
+\subsection*{第二阶段：SCF 循环}
+
+循环里发生的是：
+\begin{enumerate}[label=\arabic*.]
+  \item 根据当前 $\alpha/\beta$ 密度构造两套 Fock；
+  \item 如果启用 DIIS，就把它们拼成块矩阵做外推；
+  \item 分别对角化得到新的 $\alpha/\beta$ 轨道；
+  \item 分别更新 $\alpha/\beta$ 密度；
+  \item 用新密度重新生成 Fock；
+  \item 计算总电子能和总能量；
+  \item 用联合密度变化判断收敛。
+\end{enumerate}
+
+建议你第一次读这一段时，真的在纸上把变量抄下来：
+\begin{itemize}
+  \item \texttt{density\_alpha}
+  \item \texttt{density\_beta}
+  \item \texttt{fock\_alpha}
+  \item \texttt{fock\_beta}
+  \item \texttt{new\_density\_alpha}
+  \item \texttt{new\_density\_beta}
+\end{itemize}
+
+当你能把这些变量分别对应什么物理量说清楚时，UHF 其实已经懂了一大半。
+
+\subsection*{第三阶段：UHF 总能量公式}
+
+代码里用了
+\begin{equation}
+E_{\mathrm{elec}}
+=
+\frac{1}{2}
+\left[
+\mathrm{Tr}\left((\mathbf{D}^{\alpha}+\mathbf{D}^{\beta})\mathbf{h}\right)
++
+\mathrm{Tr}\left(\mathbf{D}^{\alpha}\mathbf{F}^{\alpha}\right)
++
+\mathrm{Tr}\left(\mathbf{D}^{\beta}\mathbf{F}^{\beta}\right)
+\right].
+\end{equation}
+
+它和 RHF 的区别在于：
+\begin{itemize}
+  \item 一电子项由总密度给出；
+  \item Fock 项要按自旋分开处理。
+\end{itemize}
+
+\subsection*{第四阶段：为什么收敛后还要重新对角化一次}
+
+这和 RHF 一样，是为了确保返回结果中的轨道能与最终 Fock 一致。
+
+\section{为什么还有 build\_uhf\_reference\_mf}
+
+\lstinputlisting[style=pythonstyle,firstline=204,lastline=215]{../simple_hf/uhf.py}
+
+它和 RHF 版本作用完全一样：把我们自己求得的 UHF 结果重新包装成 PySCF 的 \texttt{UHF} 对象，供后续模块继续使用。
+
+\chapter{把“从输入到输出”的整条路径串起来}
+
+\section{RHF 模式下，程序一步一步经历了什么}
+
+当你运行
+\begin{lstlisting}[style=bashstyle]
+python3 rhf_sto3g_water.py --method rhf
+\end{lstlisting}
+
+程序的实际执行路径是：
+\begin{enumerate}[label=\arabic*.]
+  \item 进入 \texttt{rhf\_sto3g\_water.py}
+  \item 调用 \texttt{simple\_hf.cli.main()}
+  \item 在 \texttt{build\_parser()} 中构造参数解释器
+  \item 在 \texttt{build\_spec\_from\_args()} 中得到 \texttt{MoleculeSpec}
+  \item 用 \texttt{build\_molecule(spec)} 构造 \texttt{mol}
+  \item 在 \texttt{run\_rhf(mol)} 中真正执行 SCF
+  \item 返回 \texttt{RHFResult}
+  \item 用打印函数把结果显示出来
+\end{enumerate}
+
+\section{UHF 模式下，多出来了什么}
+
+当你运行
+\begin{lstlisting}[style=bashstyle]
+python3 rhf_sto3g_water.py --method uhf --xyz examples/oh_radical.xyz --spin 1
+\end{lstlisting}
+
+前半段路径完全一样。真正发生变化的是求解器：
+\begin{itemize}
+  \item 从 \texttt{run\_rhf} 变成 \texttt{run\_uhf}
+  \item 从一个密度矩阵变成两个密度矩阵
+  \item 从一个 Fock 变成两个 Fock
+  \item 从一个轨道能数组变成 alpha/beta 两套轨道能
+  \item 最后还多输出 $\langle S^2\rangle$
+\end{itemize}
+
+\chapter{如果你要自己从零重写这一部分，应该按什么顺序}
+
+\section{最推荐的复现顺序}
+
+对于零基础读者，我最推荐的顺序是：
+
+\begin{enumerate}[label=\arabic*.]
+  \item 先自己写一个最小 \texttt{MoleculeSpec}
+  \item 再写 \texttt{build\_molecule}
+  \item 再写 \texttt{symmetric\_orthogonalization}
+  \item 再写 \texttt{build\_density}
+  \item 再写 \texttt{build\_fock}
+  \item 再写不带 DIIS 的 \texttt{run\_rhf}
+  \item 跑通水分子
+  \item 再加入 \texttt{DIISHelper}
+  \item 再把 RHF 扩展成 UHF
+  \item 最后再加入 $\langle S^2\rangle$ 分析
+\end{enumerate}
+
+千万不要上来就试图一口气把 \texttt{geometry.py}、\texttt{cli.py}、\texttt{rhf.py}、\texttt{uhf.py} 全抄下来，那样很容易看花。
+
+\section{每完成一步，你应该检查什么}
+
+\subsection*{完成 RHF 后}
+
+你应该能回答：
+\begin{itemize}
+  \item 重叠矩阵为什么要正交化？
+  \item 密度矩阵为什么是 $2C_{\mathrm{occ}}C_{\mathrm{occ}}^T$？
+  \item 为什么能量公式前面有 $\frac{1}{2}$？
+\end{itemize}
+
+\subsection*{完成 DIIS 后}
+
+你应该能回答：
+\begin{itemize}
+  \item 为什么要缓存最近几步的 Fock？
+  \item 误差矩阵为什么用对易子表示？
+  \item 为什么 DIIS 有时会回退到最新 Fock？
+\end{itemize}
+
+\subsection*{完成 UHF 后}
+
+你应该能回答：
+\begin{itemize}
+  \item 为什么 Coulomb 用总密度，而 Exchange 要分自旋？
+  \item 为什么 UHF 可能有自旋污染？
+  \item 为什么一个开壳层体系不能直接继续用 RHF？
+\end{itemize}
+
+\part{第二部分：从相关能到结构分析}
+
+\chapter{MP2 与 UMP2：第一次真正看到“电子相关”}
+
+\begin{goalbox}[本章目标]
+这一章要解决两个问题。第一，为什么 RHF/UHF 之后还不够；第二，\texttt{mp2.py} 和 \texttt{ump2.py} 到底是怎样把“占据轨道 + 虚轨道 + 轨道能分母”拼成相关能的。
+\end{goalbox}
+
+\section{为什么 RHF/UHF 之后先学 MP2}
+
+Hartree--Fock 的核心优点，是把多电子问题压缩成了可迭代的单行列式问题；但它仍然缺少电子相关。最直观地说，HF 只让每个电子看见别的电子的\textbf{平均场}，没有完全描述“电子会相互躲开”这件事。
+
+MP2 是最经典的第一步后 HF 方法。它在 HF 参考态上做二阶微扰修正，公式可以写成
+\begin{equation}
+E_{\mathrm{MP2}}
+=
+\sum_{ijab}
+\frac{\langle ia|jb\rangle \left(2\langle ia|jb\rangle-\langle ib|ja\rangle\right)}
+{\varepsilon_i+\varepsilon_j-\varepsilon_a-\varepsilon_b}.
+\end{equation}
+
+这一式子对于初学者看起来很吓人，但代码实现的核心其实只有四步：
+\begin{enumerate}[label=\arabic*.]
+  \item 从 RHF 结果里取出占据轨道和虚轨道；
+  \item 把 AO 基底的双电子积分变换到 MO 基底的 \(ovov\) 形式；
+  \item 组装能量分母；
+  \item 做一次大求和。
+\end{enumerate}
+
+\section{先把 \texttt{mp2.py} 整体看一遍}
+
+\lstinputlisting[style=pythonstyle]{../simple_hf/mp2.py}
+
+\subsection*{这个文件的结构非常短，但非常典型}
+
+\begin{itemize}
+  \item \texttt{MP2Result} 负责把 RHF 能、MP2 相关能和总能打包。
+  \item \texttt{transform\_ao\_eri\_to\_ovov()} 负责积分变换。
+  \item \texttt{run\_mp2()} 负责从 RHF 结果生成 MP2 能量。
+\end{itemize}
+
+这类文件特别适合初学者学习，因为它几乎把“理论对象”和“程序对象”的映射关系摆在明面上了。
+
+\section{\texttt{transform\_ao\_eri\_to\_ovov()} 到底在做什么}
+
+最难的一行是：
+\begin{lstlisting}[style=pythonstyle]
+np.einsum("pqrs,pi,qa,rj,sb->iajb", ao_eri, occ_coeff, vir_coeff,
+          occ_coeff, vir_coeff, optimize=True)
+\end{lstlisting}
+
+如果你是第一次学 Python/NumPy，请先不要试图一次把整个 Einstein 求和记住。你只需要知道：
+\begin{itemize}
+  \item \texttt{ao\_eri[p,q,r,s]} 是 AO 基底双电子积分；
+  \item \texttt{occ\_coeff[p,i]} 把 AO 指标 \(p\) 投影到占据 MO 指标 \(i\)；
+  \item \texttt{vir\_coeff[q,a]} 把 AO 指标 \(q\) 投影到虚轨道指标 \(a\)；
+  \item 返回的 \texttt{iajb} 就是我们在 MP2 公式里真正要用的积分块。
+\end{itemize}
+
+也就是说，这一行代码不是“神秘技巧”，只是把
+\begin{equation}
+(ia|jb)
+=
+\sum_{pqrs}
+C_{pi}^{\mathrm{occ}}
+C_{qa}^{\mathrm{vir}}
+C_{rj}^{\mathrm{occ}}
+C_{sb}^{\mathrm{vir}}
+(pq|rs)
+\end{equation}
+直接翻译成了张量收缩。
+
+\section{\texttt{run\_mp2()} 应该怎样读}
+
+\subsection*{第一步：先分清楚哪些轨道是占据的}
+
+\texttt{nocc = mol.nelectron // 2} 这一行表示闭壳层 RHF 中，每个空间轨道装 2 个电子，所以占据轨道数就是电子数除以 2。
+
+然后代码用切片取出：
+\begin{itemize}
+  \item \texttt{coefficients[:, :nocc]} 作为占据轨道系数矩阵；
+  \item \texttt{coefficients[:, nocc:]} 作为虚轨道系数矩阵。
+\end{itemize}
+
+你在 RHF 章节里学过，\texttt{[:, :nocc]} 的意思就是“所有行，前 \texttt{nocc} 列”。
+
+\subsection*{第二步：为什么要把轨道能也分成两段}
+
+MP2 分母是
+\begin{equation}
+\varepsilon_i+\varepsilon_j-\varepsilon_a-\varepsilon_b.
+\end{equation}
+所以代码里把轨道能分成
+\begin{itemize}
+  \item \texttt{eps\_occ}
+  \item \texttt{eps\_vir}
+\end{itemize}
+这样后面就能靠 NumPy 广播机制自动生成四维分母张量。
+
+\subsection*{第三步：广播是如何把分母拼出来的}
+
+\begin{lstlisting}[style=pythonstyle]
+denominators = (
+    eps_occ[:, None, None, None]
+    + eps_occ[None, None, :, None]
+    - eps_vir[None, :, None, None]
+    - eps_vir[None, None, None, :]
+)
+\end{lstlisting}
+
+这一段是初学者最容易晕的地方。请慢一点读：
+\begin{itemize}
+  \item \texttt{eps\_occ[:, None, None, None]} 把一维数组变成 \(i\) 方向变化的四维张量；
+  \item 第二项让 \(j\) 方向变化；
+  \item 第三项让 \(a\) 方向变化；
+  \item 第四项让 \(b\) 方向变化。
+\end{itemize}
+
+最后 NumPy 会自动把它们拼成 \((i,a,j,b)\) 形状的完整分母。
+
+\subsection*{第四步：交换积分是怎么来的}
+
+\texttt{exchange\_ovov = eri\_ovov.transpose(0, 3, 2, 1)} 的作用，是把
+\begin{equation}
+(ia|jb)
+\end{equation}
+重排成
+\begin{equation}
+(ib|ja).
+\end{equation}
+
+所以最后一行
+\begin{lstlisting}[style=pythonstyle]
+np.sum(eri_ovov * (2.0 * eri_ovov - exchange_ovov) / denominators)
+\end{lstlisting}
+就是 MP2 公式的直接实现。
+
+\begin{warnbox}[初学者提醒]
+MP2 相关能通常是负的，所以总能一般会比 RHF 更低。如果你以后自己重写程序，发现 MP2 相关能大范围为正，第一优先应该检查积分指标顺序和分母符号。
+\end{warnbox}
+
+\section{UMP2：为什么会比 MP2 多出三个相关能分量}
+
+\lstinputlisting[style=pythonstyle,firstline=1,lastline=119]{../simple_hf/ump2.py}
+
+UMP2 建立在 UHF 之上，所以它不再只有一套轨道，而是有：
+\begin{itemize}
+  \item alpha 占据/虚轨道
+  \item beta 占据/虚轨道
+\end{itemize}
+
+因此代码必须把相关能拆成三部分：
+\begin{equation}
+E_{\mathrm{UMP2}} = E_{aa} + E_{ab} + E_{bb}.
+\end{equation}
+
+\subsection*{\texttt{same\_spin\_mp2\_energy()} 为什么有 \texttt{0.25}}
+
+同自旋电子是不可分辨费米子，所以需要反对称化积分：
+\begin{equation}
+\langle ia||jb\rangle = \langle ia|jb\rangle - \langle ib|ja\rangle.
+\end{equation}
+
+代码中的
+\begin{lstlisting}[style=pythonstyle]
+antisymmetrized = eri_ovov - exchange_ovov
+\end{lstlisting}
+就是在做这件事。
+
+\texttt{0.25} 的系数来自同自旋双激发求和中的重复计数修正。你暂时不必强行背住推导，但要知道这不是“拍脑袋写进去的常数”，而是来自指标对称性。
+
+\subsection*{\texttt{opposite\_spin\_mp2\_energy()} 为什么没有交换项}
+
+因为 alpha 和 beta 电子在自旋上已经可区分，所以 opposite-spin 项不需要像同自旋那样再减去交换重排项。程序里因此只保留
+\begin{equation}
+\sum \frac{(ia|jb)^2}{\Delta \varepsilon}.
+\end{equation}
+
+\subsection*{读 \texttt{run\_ump2()} 的顺序}
+
+最推荐的阅读顺序是：
+\begin{enumerate}[label=\arabic*.]
+  \item 先看它如何从 \texttt{UHFResult} 里切出 alpha/beta 的占据与虚轨道。
+  \item 再看它如何分别构造 \texttt{eri\_aa}、\texttt{eri\_ab}、\texttt{eri\_bb}。
+  \item 最后看它如何把三个相关能加总。
+\end{enumerate}
+
+当你能说清楚这三步时，UMP2 的代码骨架其实已经完全掌握了。
+
+\begin{resourcebox}[继续学习资料]
+\begin{itemize}
+  \item PySCF MP2 用户文档：\href{https://pyscf.org/user/mp.html}{PySCF MP2 Guide}
+  \item Psi4NumPy 教学仓库，里面有 MP2 和 CC 相关参考实现：\href{https://github.com/psi4/psi4numpy}{psi4/psi4numpy}
+  \item Crawford Lab 的量子化学编程项目主页，适合系统训练 HF/MP2/CC：\href{https://crawford.chem.vt.edu/}{Crawford Lab}
+  \item Frank Jensen 的《Introduction to Computational Chemistry》官方页面，适合把方法、基组和程序概念连起来：\href{https://www.wiley-vch.de/en/areas-interest/natural-sciences/introduction-to-computational-chemistry-978-1-118-82599-0}{Wiley 页面}
+\end{itemize}
+\end{resourcebox}
+
+\chapter{DFT：RKS、UKS 与 \texttt{--xc} 泛函选择}
+
+\begin{goalbox}[本章目标]
+这一章要建立一个很重要的认识：在本项目里，DFT 不是“从零手写交换相关泛函”，而是学会如何把你已经懂的 SCF 框架，连接到 PySCF 提供的 KS-DFT 求解器上。
+\end{goalbox}
+
+\section{为什么 DFT 看起来像 HF，却又不是 HF}
+
+RKS/UKS 在程序外形上和 RHF/UHF 非常像：
+\begin{equation}
+\mathbf{F}\mathbf{C} = \mathbf{S}\mathbf{C}\bm{\varepsilon}
+\end{equation}
+的结构还在，仍然需要密度矩阵、重叠矩阵、迭代和收敛。
+
+但最大的不同是，KS 矩阵中包含了交换相关势 \(v_{\mathrm{xc}}\)。在真实工业级程序中，\(v_{\mathrm{xc}}\) 的数值积分、网格、泛函导数都非常复杂，所以本项目把这部分交给 PySCF 处理。这是非常合理的教学取舍。
+
+\section{先看 \texttt{rks.py}：闭壳层 DFT 文件其实很整洁}
+
+\lstinputlisting[style=pythonstyle]{../simple_hf/rks.py}
+
+\subsection*{\texttt{RKSResult} 和 \texttt{RHFResult} 很像}
+
+这是故意设计的。因为如果结果对象字段风格尽量统一，那么：
+\begin{itemize}
+  \item CLI 更容易复用；
+  \item 优化、频率模块更容易调用；
+  \item 初学者也更容易对比“RHF 版本”和“RKS 版本”。
+\end{itemize}
+
+\subsection*{\texttt{mf = dft.RKS(mol)} 这一行意味着什么}
+
+它不是在“计算某个具体泛函”，而是在创建一个\textbf{RKS 求解器对象}。真正选泛函的是后面的
+\begin{lstlisting}[style=pythonstyle]
+mf.xc = xc
+\end{lstlisting}
+
+这就是命令行参数 \texttt{--xc} 最终落地的地方。
+
+\section{\texttt{--xc} 到底怎么理解}
+
+在我们的程序里，你可以写：
+\begin{itemize}
+  \item \texttt{--xc lda,vwn}
+  \item \texttt{--xc pbe}
+  \item \texttt{--xc b3lyp}
+\end{itemize}
+
+初学者不需要一开始就记住所有泛函，只要先知道三件事：
+\begin{enumerate}[label=\arabic*.]
+  \item \texttt{lda,vwn} 可以看成最基础的局域密度近似；
+  \item \texttt{pbe} 是很常见的 GGA；
+  \item \texttt{b3lyp} 是最常见的混合泛函之一。
+\end{enumerate}
+
+项目本身并不解析这些名字的数学形式，而是把字符串交给 PySCF。也正因为如此，这个项目更适合作为“DFT 工作流入门”，而不是“XC 数值积分从零实现”教程。
+
+\section{回调函数 \texttt{callback} 为什么值得你学习}
+
+RKS/UKS 文件里有一段很适合初学者学 Python：
+\begin{lstlisting}[style=pythonstyle]
+history: list[float] = []
+
+def callback(envs: dict[str, object]) -> None:
+    energy = envs.get("e_tot")
+    if energy is not None:
+        history.append(float(energy))
+\end{lstlisting}
+
+这里体现了三个重要语法点：
+\begin{itemize}
+  \item 列表 \texttt{history} 用来保存每一步能量；
+  \item 内部函数 \texttt{callback} 会在 SCF 迭代过程中被反复调用；
+  \item \texttt{envs.get("e\_tot")} 是从字典里安全地取值。
+\end{itemize}
+
+所以这不是单纯的“技巧代码”，而是在告诉你：程序不仅能求最终结果，也可以记录整个收敛历史。
+
+\section{再看 \texttt{uks.py}：它和 UHF 的关系很直接}
+
+\lstinputlisting[style=pythonstyle]{../simple_hf/uks.py}
+
+UKS 和 UHF 的关系，很像 RKS 和 RHF 的关系。也就是说：
+\begin{itemize}
+  \item 如果体系闭壳层，RKS 往往最自然；
+  \item 如果体系开壳层，UKS 往往更合适；
+  \item 如果你关心自旋污染，UKS 也可以像 UHF 那样计算 \(\langle S^2\rangle\)。
+\end{itemize}
+
+\subsection*{为什么 \texttt{UKSResult} 里还保留 \texttt{s2}}
+
+因为开壳层 DFT 虽然不是 UHF，但仍然可能出现类似的自旋污染问题。所以项目里把
+\begin{itemize}
+  \item \texttt{s2}
+  \item \texttt{expected\_s2}
+  \item \texttt{spin\_contamination}
+\end{itemize}
+都保存下来，这能让你在比较 UHF 和 UKS 时看到自旋行为是否改善。
+
+\begin{resourcebox}[继续学习资料]
+\begin{itemize}
+  \item PySCF DFT 用户文档：\href{https://pyscf.org/user/dft.html}{PySCF DFT Guide}
+  \item PySCF 总体用户指南，方便你继续查看 SCF、DFT、CC 等模块：\href{https://pyscf.org/user/index.html}{PySCF User Guide}
+  \item PySCF 的快速上手页面，适合把课堂公式快速变成可运行代码：\href{https://pyscf.org/quickstart.html}{PySCF Quickstart}
+  \item Psi4Education 项目介绍，适合跟着教学实验理解基组、HF、MP2、CCSD 等方法差异：\href{https://psicode.org/posts/psi4education/}{Psi4Education}
+\end{itemize}
+\end{resourcebox}
+
+\chapter{CCSD：把单参考相关方法再推进一步}
+
+\begin{goalbox}[本章目标]
+这一章不是要你立刻手推完整的 CCSD 振幅方程，而是要让你明白：为什么项目在 CCSD 部分选择“自己准备 RHF 参考，再调用 PySCF 的 CC 求解器”，以及 \texttt{t1/t2} 这些振幅在程序里是什么地位。
+\end{goalbox}
+
+\section{CCSD 和 MP2 的关系}
+
+MP2 是二阶微扰修正；CCSD 则把单激发和双激发振幅放进指数波函数
+\begin{equation}
+|\Psi_{\mathrm{CC}}\rangle = e^{\hat{T}}|\Phi_0\rangle,
+\quad
+\hat{T} = \hat{T}_1 + \hat{T}_2.
+\end{equation}
+
+你可以把它粗略理解成：MP2 是“修正一次能量”，而 CCSD 是“通过非线性振幅方程系统地重求相关波函数”。它更贵，但通常也更可靠。
+
+\section{完整看一遍 \texttt{ccsd.py}}
+
+\lstinputlisting[style=pythonstyle]{../simple_hf/ccsd.py}
+
+\subsection*{为什么先要 \texttt{build\_reference\_mf}}
+
+这一步和我们在优化、频率模块里做的事情是同一个套路：我们已经有了自己写出来的 RHF 结果，但 PySCF 的 CCSD 求解器需要一个“像样的 mean-field 对象”作为参考态输入。
+
+所以这里不是重新做一遍 HF，而是把已有的
+\begin{itemize}
+  \item \texttt{mo\_coeff}
+  \item \texttt{mo\_energy}
+  \item \texttt{mo\_occ}
+  \item \texttt{e\_tot}
+\end{itemize}
+重新塞回一个 \texttt{scf.RHF} 对象里。
+
+\subsection*{\texttt{correlation\_energy, t1, t2 = ccsd\_solver.kernel()} 的含义}
+
+这一行非常关键：
+\begin{itemize}
+  \item \texttt{correlation\_energy} 是 CCSD 相对 RHF 的相关修正；
+  \item \texttt{t1} 是单激发振幅；
+  \item \texttt{t2} 是双激发振幅。
+\end{itemize}
+
+程序随后又计算了
+\begin{itemize}
+  \item \texttt{t1\_norm}
+  \item \texttt{t2\_norm}
+\end{itemize}
+它们不是最终物理量，但非常适合作为“结果量级检查”。如果某次计算里 \texttt{t1}、\texttt{t2} 的范数异常大，你就应该警惕参考态是否不好，或者体系是否超出了单参考方法的适用范围。
+
+\begin{warnbox}[学习上的现实建议]
+如果你现在刚学完 RHF/UHF，不建议立刻去手推完整 CCSD 方程然后硬写。更好的路线是：先理解 CCSD 的对象关系和程序接口，再去读 Psi4NumPy 或 Crawford 项目里的 CC 参考实现。
+\end{warnbox}
+
+\begin{resourcebox}[继续学习资料]
+\begin{itemize}
+  \item PySCF CC 用户文档：\href{https://pyscf.org/user/cc.html}{PySCF CC Guide}
+  \item Psi4NumPy 仓库中的 Coupled-Cluster 教学实现：\href{https://github.com/psi4/psi4numpy}{psi4/psi4numpy}
+  \item Psi4 教程入口，后续如果你想把 Python 调用和量化输入格式联系起来会很有帮助：\href{https://psi4.github.io/psi4docs/1.9.x/index_tutorials.html}{Psi4 Tutorials}
+  \item Crawford Lab 主页，上面维护着经典量化编程训练项目：\href{https://crawford.chem.vt.edu/}{Crawford Lab}
+\end{itemize}
+\end{resourcebox}
+
+\chapter{几何优化与扫描：从单点能走向结构探索}
+
+\begin{goalbox}[本章目标]
+这一章是项目功能跨度最大的一章。你会看到程序如何从“固定几何求一个能量”，成长为“自动挪动原子、寻找更低能结构、沿着键长/键角/二面角扫描势能面”的工具。
+\end{goalbox}
+
+\section{几何优化本质上在做什么}
+
+几何优化的目标不是直接最小化波函数参数，而是最小化\textbf{核坐标}上的总能量：
+\begin{equation}
+E = E(\mathbf{R}).
+\end{equation}
+
+因此你需要的不只是单点能量，还需要梯度：
+\begin{equation}
+\mathbf{g} = \frac{\partial E}{\partial \mathbf{R}}.
+\end{equation}
+
+项目里的优化模块选择了一个很适合教学的路线：
+\begin{enumerate}[label=\arabic*.]
+  \item 先调用 RHF/UHF/RKS/UKS 求单点；
+  \item 再调用 PySCF 的梯度求解器；
+  \item 用一个简化版 BFGS 思路更新几何；
+  \item 用回溯线搜索确保步长不要太激进。
+\end{enumerate}
+
+\begin{center}
+\begin{tikzpicture}[node distance=8mm and 11mm]
+\node[flowbox] (startopt) {输入初始几何\\MoleculeSpec};
+\node[flowbox, below=of startopt] (singleopt) {调用对应方法\\求能量与梯度};
+\node[flowbox, below=of singleopt] (diropt) {根据当前梯度\\构造下降方向};
+\node[flowbox, below=of diropt] (lineopt) {回溯线搜索\\试探步长 $\alpha$};
+\node[flowwarn, below=of lineopt] (okopt) {满足下降条件?};
+\node[flowalt, below left=11mm and 17mm of okopt] (acceptopt) {接受新几何\\更新 BFGS 逆 Hessian};
+\node[flowalt, below right=11mm and 17mm of okopt] (shrinkopt) {步长减半\\继续试探};
+\node[flowwarn, below=17mm of okopt] (convopt) {梯度和能量\\是否收敛?};
+\node[flowbox, below=of convopt] (endopt) {输出优化结构\\与历史信息};
+
+\draw[flowarrow] (startopt) -- (singleopt);
+\draw[flowarrow] (singleopt) -- (diropt);
+\draw[flowarrow] (diropt) -- (lineopt);
+\draw[flowarrow] (lineopt) -- (okopt);
+\draw[flowarrow] (okopt) -- node[above left,font=\small]{是} (acceptopt);
+\draw[flowarrow] (okopt) -- node[above right,font=\small]{否} (shrinkopt);
+\draw[flowarrow] (shrinkopt) |- (lineopt);
+\draw[flowarrow] (acceptopt) |- (convopt);
+\draw[flowarrow] (convopt) -- node[right,font=\small]{是} (endopt);
+\draw[flowarrow] (convopt.west) -| ++(-2.2,0) |- node[pos=0.25,left,font=\small]{否} (singleopt.west);
+\end{tikzpicture}
+\end{center}
+
+这个流程图对应的就是 \texttt{optimize\_geometry()} 的主循环：每一轮都在“算梯度、提方向、试步长、检查收敛”之间来回。
+
+\section{先看 \texttt{optimize.py} 的文件地图}
+
+\begin{itemize}
+  \item \texttt{OptimizationStep}：记录每一步的能量、最大梯度、RMS 梯度和步长。
+  \item \texttt{OptimizationResult}：记录最终优化结果。
+  \item \texttt{evaluate\_energy\_and\_gradient()}：统一封装“给定几何，算能量和梯度”。
+  \item \texttt{make\_spec\_with\_bohr\_coords()} / \texttt{format\_spec\_in\_original\_unit()}：负责几何字符串和单位转换。
+  \item \texttt{optimize\_geometry()}：真正执行优化循环。
+\end{itemize}
+
+\lstinputlisting[style=pythonstyle,firstline=15,lastline=110]{../simple_hf/optimize.py}
+
+\subsection*{为什么要有 \texttt{evaluate\_energy\_and\_gradient()}}
+
+因为优化器并不想关心你当前是 RHF、UHF、RKS 还是 UKS。它只想知道：
+\begin{quote}
+给我一个几何，我要得到当前能量和梯度。
+\end{quote}
+
+所以这个函数本质上是一个“统一接口层”。这是一种非常值得初学者学习的软件设计思路。
+
+\section{\texttt{optimize\_geometry()} 的主循环该怎么读}
+
+\lstinputlisting[style=pythonstyle,firstline=141,lastline=307]{../simple_hf/optimize.py}
+
+\subsection*{第一层：所有坐标先转成 Bohr}
+
+量子化学内部计算常常统一在原子单位下进行。所以代码先把输入几何转换成 Bohr，再在最后按用户输入单位转回去。这能避免优化过程中各种长度单位混杂。
+
+\subsection*{第二层：逆 Hessian 近似矩阵在干什么}
+
+\begin{lstlisting}[style=pythonstyle]
+inverse_hessian = np.eye(dimension)
+\end{lstlisting}
+
+这一行意味着：优化一开始先用单位矩阵当作 Hessian 逆矩阵的初猜。之后程序根据新旧梯度和位移向量做 BFGS 更新：
+\begin{equation}
+\mathbf{H}_{k+1}^{-1}
+=
+(\mathbf{I}-\rho \mathbf{s}\mathbf{y}^T)
+\mathbf{H}_{k}^{-1}
+(\mathbf{I}-\rho \mathbf{y}\mathbf{s}^T)
++ \rho \mathbf{s}\mathbf{s}^T.
+\end{equation}
+
+这里你不必强行背公式，但至少要知道：
+\begin{itemize}
+  \item \texttt{step\_vector} 对应 \(\mathbf{s}\)；
+  \item \texttt{y\_vector} 对应梯度差 \(\mathbf{y}\)；
+  \item 这一步是在不断改进“下一步往哪里走”的方向判断。
+\end{itemize}
+
+\subsection*{第三层：为什么还要回溯线搜索}
+
+因为哪怕方向是下降方向，步子太大也可能把结构带到很糟糕的位置。于是代码通过
+\begin{itemize}
+  \item 先试 \texttt{trial\_alpha = 1.0}
+  \item 如果不满足下降条件就乘 \texttt{0.5}
+\end{itemize}
+逐步缩小步长。这是非常经典、也很适合教学实现的策略。
+
+\begin{warnbox}[优化里最容易忽略的事]
+优化收敛并不等于结构一定是“真极小值”。它只说明梯度足够小。要判断它是不是稳定极小值，下一步通常要做频率分析，看是否存在虚频。
+\end{warnbox}
+
+\section{扫描：为什么要同时支持 rigid 和 relaxed}
+
+扫描的目标是沿某个内部坐标采样势能面。例如：
+\begin{itemize}
+  \item 改变 O--H 键长，看能量怎么变；
+  \item 改变 H--O--H 键角，看哪一个角度能量最低；
+  \item 改变四个原子定义的二面角，看构象差异。
+\end{itemize}
+
+但“扫描”有两种完全不同的做法：
+\begin{enumerate}[label=\arabic*.]
+  \item rigid scan：只强行改这个坐标，其余几何不放松；
+  \item relaxed scan：把这个坐标约束在目标值附近，其余坐标重新优化。
+\end{enumerate}
+
+\begin{center}
+\begin{tikzpicture}[node distance=8mm and 12mm]
+\node[flowbox] (startscan) {给定扫描坐标\\bond / angle / dihedral};
+\node[flowbox, below=of startscan] (gridscan) {用 \texttt{np.linspace()}\\生成目标取值序列};
+\node[flowwarn, below=of gridscan] (modescan) {rigid 还是 relaxed?};
+\node[flowalt, below left=12mm and 18mm of modescan] (rigidscan) {刚性修改几何\\直接做单点计算};
+\node[flowalt, below right=12mm and 18mm of modescan] (relaxscan) {先施加目标坐标\\再做受约束优化};
+\node[flowbox, below=18mm of modescan] (packscan) {记录每个点的\\能量、实际坐标、收敛信息};
+\node[flowbox, below=of packscan] (bestscan) {找最低能点\\可选写出 CSV};
+
+\draw[flowarrow] (startscan) -- (gridscan);
+\draw[flowarrow] (gridscan) -- (modescan);
+\draw[flowarrow] (modescan) -- node[above left,font=\small]{rigid} (rigidscan);
+\draw[flowarrow] (modescan) -- node[above right,font=\small]{relaxed} (relaxscan);
+\draw[flowarrow] (rigidscan) |- (packscan);
+\draw[flowarrow] (relaxscan) |- (packscan);
+\draw[flowarrow] (packscan) -- (bestscan);
+\end{tikzpicture}
+\end{center}
+
+把它和 \texttt{scan.py} 对起来看时，你会很容易发现：两种扫描方式最大的差异，不在“坐标定义”，而在“每个扫描点内部到底是做一次单点，还是做一次优化”。
+
+\section{\texttt{scan.py} 文件虽然长，但可以分成四层}
+
+\begin{itemize}
+  \item 坐标辅助函数：识别 bond/angle/dihedral 的指标数、单位、当前值。
+  \item 约束势函数：把“我要固定某个坐标”变成惩罚能。
+  \item 单点接口：
+  \texttt{evaluate\_single\_point()} 统一分发到
+  RHF/UHF/RKS/UKS，以及 MP2/UMP2/CCSD。
+  \item 两类扫描主循环：
+  \texttt{rigid\_scan()} 与 \texttt{relaxed\_scan()}。
+\end{itemize}
+
+\lstinputlisting[style=pythonstyle,firstline=63,lastline=161]{../simple_hf/scan.py}
+
+\subsection*{惩罚函数为什么很重要}
+
+relaxed scan 没有直接“硬锁死”某个坐标，而是用
+\begin{equation}
+E_{\mathrm{penalty}}=\frac{1}{2}k(q-q_0)^2
+\end{equation}
+给目标坐标一个谐振子型惩罚。这样做的好处是：
+\begin{itemize}
+  \item 其余自由度还能自然放松；
+  \item 对角度和二面角扫描比较稳；
+  \item 和几何优化模块的接口容易衔接。
+\end{itemize}
+
+\section{读 rigid scan 和 relaxed scan 的主循环}
+
+\lstinputlisting[style=pythonstyle,firstline=164,lastline=286]{../simple_hf/scan.py}
+
+\lstinputlisting[style=pythonstyle,firstline=306,lastline=465]{../simple_hf/scan.py}
+
+\subsection*{rigid scan 在做什么}
+
+它的逻辑非常直接：
+\begin{enumerate}[label=\arabic*.]
+  \item 用 \texttt{np.linspace()} 生成一串目标坐标值；
+  \item 每个目标值都构造一个新几何；
+  \item 对每个几何做一次单点；
+  \item 把所有点打包成 \texttt{ScanResult}；
+  \item 最后找出最低能点。
+\end{enumerate}
+
+\subsection*{relaxed scan 为什么更长}
+
+因为它每个扫描点内部都还要再做一次几何优化。它的思路是：
+\begin{enumerate}[label=\arabic*.]
+  \item 先把当前工作几何刚性调整到目标值附近；
+  \item 再调用 \texttt{optimize\_geometry()} 做受约束优化；
+  \item 得到优化后的结构后，继续作为下一个扫描点的起点。
+\end{enumerate}
+
+这会让扫描更平滑，也更接近真实势能面最小能路径。
+
+\subsection*{为什么还要写 \texttt{write\_scan\_csv()}}
+
+因为扫描结果天然适合画图。CSV 可以让你后续直接用：
+\begin{itemize}
+  \item Excel
+  \item Origin
+  \item Python 的 \texttt{matplotlib}
+\end{itemize}
+去画能量随键长、键角或二面角变化的曲线。
+
+\begin{resourcebox}[继续学习资料]
+\begin{itemize}
+  \item PySCF 几何优化用户文档：\href{https://pyscf.org/user/geomopt.html}{PySCF Geometry Optimization}
+  \item PySCF 的 \texttt{geomopt} 接口文档：\href{https://pyscf.org/interface/geomopt.html}{PySCF geomopt Interface}
+  \item geomeTRIC 约束优化官方文档，理解 relaxed scan 里的“柔性约束”很有帮助：\href{https://geometric.readthedocs.io/en/latest/constraints.html}{geomeTRIC Constraints}
+  \item PySCF 的通用使用说明，其中 scanner 概念对理解结构优化流程很有帮助：\href{https://pyscf.org/user/using.html}{PySCF Using Guide}
+\end{itemize}
+\end{resourcebox}
+
+\chapter{频率分析：检查结构是极小值还是鞍点}
+
+\begin{goalbox}[本章目标]
+频率分析看似是“优化之后的附加功能”，实际上它承担着非常关键的判断任务：你找到的结构到底是稳定极小值，还是过渡态，还是根本没有优化好。
+\end{goalbox}
+
+\section{频率分析为什么离不开 Hessian}
+
+频率分析的核心对象是 Hessian：
+\begin{equation}
+H_{A\alpha,B\beta}
+=
+\frac{\partial^2 E}{\partial R_{A\alpha}\partial R_{B\beta}}.
+\end{equation}
+
+也就是总能量对核坐标的二阶导数矩阵。把质量加权后的 Hessian 对角化，就能得到振动频率和正规模。
+
+\begin{center}
+\begin{tikzpicture}[node distance=8mm and 12mm]
+\node[flowbox] (startfreq) {输入几何\\与方法选择};
+\node[flowbox, below=of startfreq] (scffreq) {先做 RHF/UHF/RKS/UKS\\得到参考波函数};
+\node[flowbox, below=of scffreq] (reffreq) {包装成 PySCF\\reference mean-field};
+\node[flowbox, below=of reffreq] (hessfreq) {调用 \texttt{mf.Hessian()}\\计算 Hessian};
+\node[flowbox, below=of hessfreq] (harmfreq) {调用 \texttt{thermo.harmonic\_analysis()}\\做谐振分析};
+\node[flowalt, below=of harmfreq] (outfreq) {输出频率、正规模、\\约化质量、虚频个数};
+
+\draw[flowarrow] (startfreq) -- (scffreq);
+\draw[flowarrow] (scffreq) -- (reffreq);
+\draw[flowarrow] (reffreq) -- (hessfreq);
+\draw[flowarrow] (hessfreq) -- (harmfreq);
+\draw[flowarrow] (harmfreq) -- (outfreq);
+\end{tikzpicture}
+\end{center}
+
+频率分析这部分的流程之所以清晰，是因为它几乎完全复用了前面已经建立好的单点求解接口。真正新增的核心对象，其实只有 Hessian 和谐振分析结果。
+
+\section{完整看一遍 \texttt{frequency.py}}
+
+\lstinputlisting[style=pythonstyle]{../simple_hf/frequency.py}
+
+\subsection*{文件的骨架和优化模块很像}
+
+你会发现它的套路和优化模块非常接近：
+\begin{enumerate}[label=\arabic*.]
+  \item 先根据 \texttt{method} 选择 RHF/UHF/RKS/UKS；
+  \item 再把结果包装成 PySCF reference mean-field；
+  \item 然后调用 \texttt{mf.Hessian()}；
+  \item 最后再把 Hessian 交给 \texttt{thermo.harmonic\_analysis()}。
+\end{enumerate}
+
+这正说明了一个很重要的软件结构思想：
+\begin{quote}
+只要前面的“结果对象”和“reference\_mf 构造器”设计得统一，后面的高级功能就能很顺地接上。
+\end{quote}
+
+\subsection*{\texttt{num\_imaginary} 是怎么来的}
+
+程序里用了
+\begin{lstlisting}[style=pythonstyle]
+num_imaginary = int(np.count_nonzero(np.abs(frequencies_cm1.imag) > 1.0e-8))
+\end{lstlisting}
+
+这表示如果某个频率有明显虚部，就把它计成一个虚频。
+
+对结构判断来说：
+\begin{itemize}
+  \item 0 个虚频，通常表示极小值；
+  \item 1 个虚频，常常表示一阶鞍点，也就是过渡态候选；
+  \item 多个虚频，通常说明结构还不稳定，或者方法/初猜有问题。
+\end{itemize}
+
+\subsection*{为什么结果里还保存正规模、约化质量、力常数}
+
+因为频率分析不只是“给一串 cm\(^{-1}\)”数字。很多后续分析都依赖这些量：
+\begin{itemize}
+  \item \texttt{normal\_modes}：看每个振动模式到底是哪几个原子在动；
+  \item \texttt{reduced\_masses}：理解模式质量特征；
+  \item \texttt{force\_constants}：理解势能面的局部刚性。
+\end{itemize}
+
+\begin{warnbox}[实践提醒]
+如果你在未优化的结构上直接做频率分析，看到虚频并不奇怪。频率分析最好放在优化之后再做，而且要明确你想找的是极小值还是过渡态。
+\end{warnbox}
+
+\begin{resourcebox}[继续学习资料]
+\begin{itemize}
+  \item PySCF Hessian/API 文档，里面直接给出了 \texttt{harmonic\_analysis()} 的接口：\href{https://pyscf.org/pyscf_api_docs/pyscf.hessian.html}{PySCF Hessian API}
+  \item PySCF 几何优化文档，因为频率分析通常和优化配套使用：\href{https://pyscf.org/user/geomopt.html}{PySCF Geometry Optimization}
+  \item PySCF 快速上手页，适合继续查找梯度、Hessian、溶剂、DFT 等示例：\href{https://pyscf.org/quickstart.html}{PySCF Quickstart}
+  \item Jensen 的教材官方页，适合把频率、热化学和势能面概念系统补齐：\href{https://www.wiley-vch.de/en/areas-interest/natural-sciences/introduction-to-computational-chemistry-978-1-118-82599-0}{Wiley 页面}
+\end{itemize}
+\end{resourcebox}
+
+\chapter{学完这一轮之后，下一步该怎么继续}
+
+\begin{goalbox}[阶段性路线图]
+如果你已经能跟着这份讲义把项目读到这里，你就已经不是“只会跑黑箱程序”的状态了。下一阶段最值得继续补的，不是盲目堆方法名，而是按一条有层次的路线往前走。
+\end{goalbox}
+
+\section{最推荐的继续路线}
+
+\begin{enumerate}[label=\arabic*.]
+  \item 先把本项目里所有结果对象和 CLI 路线彻底读熟。
+  \item 自己重写一个最小版 MP2，再验证与当前项目结果是否一致。
+  \item 继续补可视化，例如把扫描结果自动画成图。
+  \item 学解析梯度与数值梯度的区别，理解为什么优化会更稳定。
+  \item 如果对电子相关特别感兴趣，再继续读 CCSD(T)、CASSCF、NEVPT2。
+\end{enumerate}
+
+\section{哪些资料最适合从“会跑”走向“会写”}
+
+\begin{resourcebox}[通用学习资料]
+\begin{itemize}
+  \item PySCF 用户指南总入口：\href{https://pyscf.org/user/index.html}{PySCF User Guide}
+  \item Psi4NumPy：\href{https://github.com/psi4/psi4numpy}{psi4/psi4numpy}
+  \item Psi4Education：\href{https://psicode.org/posts/psi4education/}{Psi4Education}
+  \item Crawford Lab：\href{https://crawford.chem.vt.edu/}{Crawford Lab}
+  \item Frank Jensen 教材官方页：\href{https://www.wiley-vch.de/en/areas-interest/natural-sciences/introduction-to-computational-chemistry-978-1-118-82599-0}{Wiley 页面}
+\end{itemize}
+\end{resourcebox}
+
+\chapter{本册的最后总结}
+
+如果你走到这里，真正需要带走的已经不只是某一个公式，而是一整套“量子化学小程序是怎样长出来的”认识：
+
+\begin{enumerate}[label=\arabic*.]
+  \item Hartree 引入了平均场思想。
+  \item Hartree--Fock 通过 Slater 行列式修复了费米子反对称性。
+  \item RHF 在程序中体现为：矩阵、密度、Fock、对角化、自洽循环。
+  \item DIIS 不是魔法，只是利用最近若干步的信息来稳住 SCF。
+  \item UHF 的本质，是把单一闭壳层图景扩展成自旋分辨图景。
+  \item MP2/UMP2 让你第一次真正看到电子相关在程序里的张量结构。
+  \item RKS/UKS 让你看到 HF 风格代码怎样过渡到 DFT 工作流。
+  \item CCSD 说明更高层相关方法往往建立在统一 reference wavefunction 接口上。
+  \item 优化、扫描和频率分析告诉你：量子化学程序并不只会算一个单点能。
+  \item 真正的量子化学编程，不是死背公式，而是把公式拆成可靠的数据结构、统一接口与数值步骤。
+\end{enumerate}
+
+如果你已经能把 \texttt{geometry.py}、\texttt{rhf.py}、\texttt{uhf.py} 这一层读懂，并且开始理解 \texttt{mp2.py}、\texttt{rks.py}、\texttt{optimize.py}、\texttt{scan.py}、\texttt{frequency.py} 这些模块，那么你就已经走到了“可以自己继续扩项目”的门口。
+
+\chapter*{附录：本册建议实际运行的命令}
+\addcontentsline{toc}{chapter}{附录：本册建议实际运行的命令}
+
+\begin{lstlisting}[style=bashstyle]
+cd simple_hf_water
+python3 -m pip install -r requirements.txt
+
+# 最基础的 RHF 水分子计算
+python3 rhf_sto3g_water.py --method rhf
+
+# 显示 RHF 迭代历史
+python3 rhf_sto3g_water.py --method rhf --show-history
+
+# 关闭 DIIS，看收敛行为变化
+python3 rhf_sto3g_water.py --method rhf --no-diis
+
+# 开壳层 OH 自由基 UHF
+python3 rhf_sto3g_water.py --method uhf --xyz examples/oh_radical.xyz --spin 1
+
+# 在 RHF 结果基础上做 MP2
+python3 rhf_sto3g_water.py --method mp2
+
+# 用 B3LYP 做闭壳层 RKS
+python3 rhf_sto3g_water.py --method rks --xc b3lyp
+
+# 对 OH 自由基做 UKS
+python3 rhf_sto3g_water.py --method uks --xc pbe --xyz examples/oh_radical.xyz --spin 1
+
+# 计算 CCSD 能量
+python3 rhf_sto3g_water.py --method ccsd
+
+# RHF 几何优化
+python3 rhf_sto3g_water.py --method rhf --optimize
+
+# RKS 几何优化
+python3 rhf_sto3g_water.py --method rks --xc b3lyp --optimize
+
+# 刚性键角扫描
+python3 rhf_sto3g_water.py --method rhf --scan rigid \
+  --scan-coordinate angle --scan-atoms 2,1,3 \
+  --scan-start 90 --scan-stop 120 --scan-points 7
+
+# 柔性键角扫描并导出 CSV
+python3 rhf_sto3g_water.py --method rks --xc b3lyp --scan relaxed \
+  --scan-coordinate angle --scan-atoms 2,1,3 \
+  --scan-start 95 --scan-stop 115 --scan-points 5 \
+  --scan-output results/angle_scan.csv
+
+# 键长扫描
+python3 rhf_sto3g_water.py --method rhf --scan rigid \
+  --scan-coordinate bond --scan-atoms 1,2 \
+  --scan-start 0.8 --scan-stop 1.3 --scan-points 8
+
+# 二面角扫描
+python3 rhf_sto3g_water.py --method uhf --scan rigid \
+  --scan-coordinate dihedral --scan-atoms 1,2,3,4 \
+  --scan-start -180 --scan-stop 180 --scan-points 13
+
+# 频率分析
+python3 rhf_sto3g_water.py --method rhf --frequency
+\end{lstlisting}
+
+建议你不要只是跑命令，而是把每个输出字段和对应源码变量逐一对上。只有这样，代码和理论才会真正连起来。
+
+\end{document}
