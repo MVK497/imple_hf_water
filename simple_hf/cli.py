@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .ccsd import CCSDResult, run_ccsd
 from .geometry import (
     MoleculeSpec,
     default_water_spec,
@@ -42,7 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--method",
         type=str,
         default="rhf",
-        choices=["rhf", "uhf", "mp2", "ump2"],
+        choices=["rhf", "uhf", "mp2", "ump2", "ccsd"],
         help="Electronic structure method to run.",
     )
     parser.add_argument("--charge", type=int, default=0, help="Total molecular charge.")
@@ -182,6 +183,44 @@ def print_mp2_result(
             print(f"  Iter {iteration:>2d}: {energy:.12f}")
 
 
+def print_ccsd_result(
+    spec: MoleculeSpec,
+    rhf_result: RHFResult,
+    ccsd_result: CCSDResult,
+    nao: int,
+    nelectron: int,
+    show_history: bool,
+) -> None:
+    print("Restricted CCSD")
+    print(f"System: {spec.title}")
+    print(f"Basis set: {spec.basis}")
+    print(f"Unit: {spec.unit}")
+    print(f"Charge: {spec.charge}")
+    print(f"Spin: {spec.spin}")
+    print(f"Basis functions: {nao}")
+    print(f"Electrons: {nelectron}")
+    print(f"Occupied orbitals: {ccsd_result.nocc}")
+    print(f"Virtual orbitals: {ccsd_result.nvir}")
+    print(f"RHF iterations: {rhf_result.iterations}")
+    print(f"CCSD converged:           {ccsd_result.converged}")
+    print(f"Nuclear repulsion energy: {rhf_result.nuclear_repulsion:.12f} Eh")
+    print(f"RHF energy:               {ccsd_result.rhf_energy:.12f} Eh")
+    print(f"CCSD correlation energy:  {ccsd_result.ccsd_correlation_energy:.12f} Eh")
+    print(f"Total CCSD energy:        {ccsd_result.total_energy:.12f} Eh")
+    print(f"||t1||:                   {ccsd_result.t1_norm:.12f}")
+    print(f"||t2||:                   {ccsd_result.t2_norm:.12f}")
+    print()
+    print("Orbital energies (Eh):")
+    for index, energy in enumerate(ccsd_result.orbital_energies, start=1):
+        print(f"  MO {index:>2d}: {energy: .12f}")
+
+    if show_history:
+        print()
+        print("RHF SCF history (total energy in Eh):")
+        for iteration, energy in enumerate(rhf_result.history, start=1):
+            print(f"  Iter {iteration:>2d}: {energy:.12f}")
+
+
 def print_uhf_result(
     spec: MoleculeSpec,
     result: UHFResult,
@@ -283,7 +322,7 @@ def main() -> None:
         d_tol=args.density_tol,
         use_diis=not args.no_diis,
         diis_space=args.diis_space,
-    ) if args.method in {"rhf", "mp2"} else None
+    ) if args.method in {"rhf", "mp2", "ccsd"} else None
     if args.method == "rhf":
         assert rhf_result is not None
         print_rhf_result(spec, rhf_result, mol.nao_nr(), mol.nelectron, args.show_history)
@@ -293,6 +332,12 @@ def main() -> None:
         assert rhf_result is not None
         mp2_result = run_mp2(mol, rhf_result)
         print_mp2_result(spec, rhf_result, mp2_result, mol.nao_nr(), mol.nelectron, args.show_history)
+        return
+
+    if args.method == "ccsd":
+        assert rhf_result is not None
+        ccsd_result = run_ccsd(mol, rhf_result)
+        print_ccsd_result(spec, rhf_result, ccsd_result, mol.nao_nr(), mol.nelectron, args.show_history)
         return
 
     uhf_result = run_uhf(
