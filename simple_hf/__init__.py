@@ -1,4 +1,5 @@
 from .ccsd import CCSDResult, run_ccsd
+from .frequency import FrequencyResult, run_frequency
 from .geometry import (
     MoleculeSpec,
     default_water_spec,
@@ -17,6 +18,7 @@ from .uhf import UHFResult, run_uhf
 
 __all__ = [
     "CCSDResult",
+    "FrequencyResult",
     "MoleculeSpec",
     "MP2Result",
     "OptimizationResult",
@@ -35,6 +37,7 @@ __all__ = [
     "relaxed_scan",
     "read_xyz_geometry",
     "run_ccsd",
+    "run_frequency",
     "run_mp2",
     "run_rks",
     "run_rhf",

@@ -10,6 +10,7 @@
 - `UMP2`
 - `RHF-based CCSD`
 - `RHF/UHF/RKS/UKS` 几何优化
+- `RHF/UHF/RKS/UKS` 谐振频率分析
 - 键长刚性扫描 / 柔性扫描
 - 键角刚性扫描 / 柔性扫描
 - 二面角刚性扫描 / 柔性扫描
@@ -39,6 +40,7 @@ python3 -m pip install -r requirements.txt
 - `simple_hf/ump2.py`: `UMP2`
 - `simple_hf/ccsd.py`: `CCSD`
 - `simple_hf/optimize.py`: `RHF/UHF/RKS/UKS` 几何优化
+- `simple_hf/frequency.py`: `RHF/UHF/RKS/UKS` 频率分析
 - `simple_hf/scan.py`: 内坐标扫描模块
 - `examples/water.xyz`: 水分子示例
 - `examples/oh_radical.xyz`: `OH` 自由基示例
@@ -170,6 +172,41 @@ python3 rhf_sto3g_water.py --method uks --xc pbe --xyz examples/oh_radical.xyz -
 ```bash
 python3 rhf_sto3g_water.py --method rhf --optimize --show-history
 ```
+
+## 频率分析
+
+当前频率分析支持：
+
+- `RHF`
+- `UHF`
+- `RKS`
+- `UKS`
+
+水分子 `RHF` 频率：
+
+```bash
+python3 rhf_sto3g_water.py --method rhf --frequency
+```
+
+水分子 `RKS/B3LYP` 频率：
+
+```bash
+python3 rhf_sto3g_water.py --method rks --xc b3lyp --frequency
+```
+
+`OH` 自由基 `UKS/PBE` 频率：
+
+```bash
+python3 rhf_sto3g_water.py --method uks --xc pbe --xyz examples/oh_radical.xyz --spin 1 --frequency
+```
+
+也可以先优化再做频率：
+
+```bash
+python3 rhf_sto3g_water.py --method rks --xc b3lyp --optimize --frequency
+```
+
+如果出现虚频，程序会用 `123.45i cm^-1` 这样的形式显示，便于判断当前结构是否是极小值还是鞍点。
 
 ## 内坐标扫描
 

@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .ccsd import CCSDResult, run_ccsd
+from .frequency import FrequencyResult, run_frequency
 from .geometry import (
     MoleculeSpec,
     default_water_spec,
@@ -83,6 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--optimize",
         action="store_true",
         help="Run a geometry optimization. Supported for RHF, UHF, RKS, and UKS.",
+    )
+    parser.add_argument(
+        "--frequency",
+        action="store_true",
+        help="Run a harmonic frequency analysis. Supported for RHF, UHF, RKS, and UKS.",
     )
     parser.add_argument(
         "--scan",
@@ -535,6 +541,49 @@ def print_scan_result(scan_result: ScanResult) -> None:
     print(scan_result.best_point.spec.atom)
 
 
+def format_frequency_cm1(value: complex) -> str:
+    if abs(value.imag) > 1.0e-8:
+        return f"{abs(value.imag):.2f}i"
+    return f"{value.real:.2f}"
+
+
+def print_frequency_result(
+    spec: MoleculeSpec,
+    result: FrequencyResult,
+) -> None:
+    print(f"{result.method.upper()} Harmonic Frequency Analysis")
+    print(f"System: {spec.title}")
+    print(f"Basis set: {spec.basis}")
+    if result.xc is not None:
+        print(f"XC functional: {result.xc}")
+    print(f"Unit: {spec.unit}")
+    print(f"Charge: {spec.charge}")
+    print(f"Spin: {spec.spin}")
+    print(f"Reference energy: {result.energy:.12f} Eh")
+    print(f"Vibrational modes: {len(result.frequencies_cm1)}")
+    print(f"Imaginary modes: {result.num_imaginary}")
+    if isinstance(result.reference_result, (UHFResult, UKSResult)):
+        print(f"Reference <S^2>: {result.reference_result.s2:.12f}")
+        print(f"Spin contamination: {result.reference_result.spin_contamination:.12f}")
+    print()
+    print("Frequencies:")
+    for index, (frequency, reduced_mass, force_constant) in enumerate(
+        zip(
+            result.frequencies_cm1,
+            result.reduced_masses,
+            result.force_constants_au,
+            strict=True,
+        ),
+        start=1,
+    ):
+        print(
+            f"  Mode {index:>2d}: "
+            f"{format_frequency_cm1(frequency):>10s} cm^-1  "
+            f"mu = {float(reduced_mass.real):8.4f} amu  "
+            f"k = {float(force_constant.real):9.5f} au"
+        )
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -544,8 +593,12 @@ def main() -> None:
         parser.error("--scan-points must be at least 2.")
     if args.optimize and args.scan:
         parser.error("--optimize and --scan cannot be used together.")
+    if args.frequency and args.scan:
+        parser.error("--frequency and --scan cannot be used together.")
     if args.optimize and args.method not in {"rhf", "uhf", "rks", "uks"}:
         parser.error("--optimize currently supports --method rhf, uhf, rks, or uks.")
+    if args.frequency and args.method not in {"rhf", "uhf", "rks", "uks"}:
+        parser.error("--frequency currently supports --method rhf, uhf, rks, or uks.")
     spec = build_spec_from_args(args)
     if args.scan:
         if args.scan_atoms is None or args.scan_start is None or args.scan_stop is None:
@@ -617,6 +670,33 @@ def main() -> None:
             diis_space=args.diis_space,
         )
         print_optimization_result(spec, opt_result, args.show_history)
+        if args.frequency:
+            print()
+            freq_result = run_frequency(
+                opt_result.optimized_spec,
+                method=args.method,
+                xc=args.xc,
+                max_iter=args.max_iter,
+                e_tol=args.energy_tol,
+                d_tol=args.density_tol,
+                use_diis=not args.no_diis,
+                diis_space=args.diis_space,
+            )
+            print_frequency_result(opt_result.optimized_spec, freq_result)
+        return
+
+    if args.frequency:
+        freq_result = run_frequency(
+            spec,
+            method=args.method,
+            xc=args.xc,
+            max_iter=args.max_iter,
+            e_tol=args.energy_tol,
+            d_tol=args.density_tol,
+            use_diis=not args.no_diis,
+            diis_space=args.diis_space,
+        )
+        print_frequency_result(spec, freq_result)
         return
 
     mol = build_molecule(spec)
