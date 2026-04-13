@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 
@@ -31,6 +32,9 @@ class OptimizationResult:
     final_result: RHFResult | UHFResult
 
 
+PenaltyFunction = Callable[[np.ndarray], tuple[float, np.ndarray]]
+
+
 def evaluate_energy_and_gradient(
     spec: MoleculeSpec,
     method: str,
@@ -39,6 +43,7 @@ def evaluate_energy_and_gradient(
     d_tol: float,
     use_diis: bool,
     diis_space: int,
+    penalty_function: PenaltyFunction | None = None,
 ) -> tuple[float, np.ndarray, RHFResult | UHFResult]:
     mol = build_molecule(spec)
     if method == "rhf":
@@ -67,7 +72,16 @@ def evaluate_energy_and_gradient(
     grad_solver = mf.nuc_grad_method()
     grad_solver.verbose = 0
     gradient = grad_solver.kernel()
-    return float(result.energy), np.array(gradient, copy=True), result
+    total_energy = float(result.energy)
+    total_gradient = np.array(gradient, copy=True)
+
+    if penalty_function is not None:
+        _, coords_bohr = parse_atom_string(spec.atom)
+        penalty_energy, penalty_gradient = penalty_function(coords_bohr)
+        total_energy += float(penalty_energy)
+        total_gradient = total_gradient + np.array(penalty_gradient, copy=False)
+
+    return total_energy, total_gradient, result
 
 
 def make_spec_with_bohr_coords(
@@ -110,6 +124,7 @@ def optimize_geometry(
     scf_d_tol: float = 1.0e-8,
     use_diis: bool = True,
     diis_space: int = 6,
+    penalty_function: PenaltyFunction | None = None,
 ) -> OptimizationResult:
     if method not in {"rhf", "uhf"}:
         raise ValueError("Geometry optimization currently supports only RHF and UHF.")
@@ -125,6 +140,7 @@ def optimize_geometry(
         scf_d_tol,
         use_diis,
         diis_space,
+        penalty_function,
     )
 
     initial_energy = current_energy
@@ -181,6 +197,7 @@ def optimize_geometry(
                 scf_d_tol,
                 use_diis,
                 diis_space,
+                penalty_function,
             )
             if trial_energy <= current_energy + c1 * trial_alpha * float(np.dot(gradient_flat, direction)):
                 best_trial = (trial_energy, trial_gradient, trial_result, trial_coords_bohr)

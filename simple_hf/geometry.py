@@ -47,6 +47,12 @@ def convert_coords(coords: np.ndarray, from_unit: str, to_unit: str) -> np.ndarr
     raise ValueError(f"Unsupported unit conversion from {from_unit} to {to_unit}.")
 
 
+def convert_length_value(value: float, from_unit: str, to_unit: str) -> float:
+    coords = np.array([[value, 0.0, 0.0]])
+    converted = convert_coords(coords, from_unit, to_unit)
+    return float(converted[0, 0])
+
+
 def _normalize_geometry_lines(lines: list[str]) -> str:
     cleaned = [line.strip() for line in lines if line.strip()]
     if not cleaned:
@@ -85,6 +91,189 @@ def format_atom_string(symbols: list[str], coords: np.ndarray) -> str:
         for symbol, xyz in zip(symbols, coords, strict=True)
     ]
     return "\n".join(lines)
+
+
+def unit_vector(vector: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vector))
+    if norm < 1.0e-14:
+        raise ValueError("Cannot normalize a near-zero vector.")
+    return vector / norm
+
+
+def angle_radians(coords: np.ndarray, atoms: tuple[int, int, int]) -> float:
+    i, j, k = atoms
+    vec_ji = coords[i] - coords[j]
+    vec_jk = coords[k] - coords[j]
+    u_ji = unit_vector(vec_ji)
+    u_jk = unit_vector(vec_jk)
+    cosine = float(np.clip(np.dot(u_ji, u_jk), -1.0, 1.0))
+    return float(np.arccos(cosine))
+
+
+def angle_degrees(coords: np.ndarray, atoms: tuple[int, int, int]) -> float:
+    return float(np.degrees(angle_radians(coords, atoms)))
+
+
+def bond_length(coords: np.ndarray, atoms: tuple[int, int]) -> float:
+    i, j = atoms
+    return float(np.linalg.norm(coords[j] - coords[i]))
+
+
+def choose_perpendicular(vector: np.ndarray) -> np.ndarray:
+    candidates = [
+        np.array([1.0, 0.0, 0.0]),
+        np.array([0.0, 1.0, 0.0]),
+        np.array([0.0, 0.0, 1.0]),
+    ]
+    unit = unit_vector(vector)
+    for candidate in candidates:
+        trial = np.cross(unit, candidate)
+        if np.linalg.norm(trial) > 1.0e-10:
+            return unit_vector(trial)
+    raise ValueError("Could not construct a perpendicular direction.")
+
+
+def set_angle_rigid(
+    coords: np.ndarray,
+    atoms: tuple[int, int, int],
+    target_angle_deg: float,
+) -> np.ndarray:
+    i, j, k = atoms
+    if not 0.0 < target_angle_deg < 180.0:
+        raise ValueError("Target angle must be between 0 and 180 degrees.")
+
+    new_coords = np.array(coords, copy=True)
+    center = coords[j]
+    ref_vec = coords[i] - center
+    move_vec = coords[k] - center
+
+    ref_unit = unit_vector(ref_vec)
+    move_norm = float(np.linalg.norm(move_vec))
+    move_parallel = np.dot(move_vec, ref_unit) * ref_unit
+    move_perp = move_vec - move_parallel
+    if np.linalg.norm(move_perp) < 1.0e-10:
+        plane_unit = choose_perpendicular(ref_unit)
+    else:
+        plane_unit = unit_vector(move_perp)
+
+    angle_rad = np.deg2rad(target_angle_deg)
+    new_move_vec = move_norm * (np.cos(angle_rad) * ref_unit + np.sin(angle_rad) * plane_unit)
+    new_coords[k] = center + new_move_vec
+    return new_coords
+
+
+def set_bond_length_rigid(
+    coords: np.ndarray,
+    atoms: tuple[int, int],
+    target_distance: float,
+) -> np.ndarray:
+    i, j = atoms
+    if target_distance <= 0.0:
+        raise ValueError("Target bond length must be positive.")
+
+    new_coords = np.array(coords, copy=True)
+    anchor = coords[i]
+    move_vec = coords[j] - anchor
+    move_unit = unit_vector(move_vec)
+    new_coords[j] = anchor + target_distance * move_unit
+    return new_coords
+
+
+def wrap_angle_radians(value: float) -> float:
+    return float((value + np.pi) % (2.0 * np.pi) - np.pi)
+
+
+def dihedral_radians(coords: np.ndarray, atoms: tuple[int, int, int, int]) -> float:
+    i, j, k, l = atoms
+    p0 = coords[i]
+    p1 = coords[j]
+    p2 = coords[k]
+    p3 = coords[l]
+
+    b0 = p0 - p1
+    b1 = p2 - p1
+    b2 = p3 - p2
+
+    b1_unit = unit_vector(b1)
+    v = b0 - np.dot(b0, b1_unit) * b1_unit
+    w = b2 - np.dot(b2, b1_unit) * b1_unit
+    v_unit = unit_vector(v)
+    w_unit = unit_vector(w)
+
+    x = float(np.dot(v_unit, w_unit))
+    y = float(np.dot(np.cross(b1_unit, v_unit), w_unit))
+    return float(np.arctan2(y, x))
+
+
+def dihedral_degrees(coords: np.ndarray, atoms: tuple[int, int, int, int]) -> float:
+    return float(np.degrees(dihedral_radians(coords, atoms)))
+
+
+def rotation_matrix(axis: np.ndarray, angle_rad: float) -> np.ndarray:
+    axis_unit = unit_vector(axis)
+    x, y, z = axis_unit
+    cos_a = float(np.cos(angle_rad))
+    sin_a = float(np.sin(angle_rad))
+    one_minus_cos = 1.0 - cos_a
+    return np.array(
+        [
+            [
+                cos_a + x * x * one_minus_cos,
+                x * y * one_minus_cos - z * sin_a,
+                x * z * one_minus_cos + y * sin_a,
+            ],
+            [
+                y * x * one_minus_cos + z * sin_a,
+                cos_a + y * y * one_minus_cos,
+                y * z * one_minus_cos - x * sin_a,
+            ],
+            [
+                z * x * one_minus_cos - y * sin_a,
+                z * y * one_minus_cos + x * sin_a,
+                cos_a + z * z * one_minus_cos,
+            ],
+        ]
+    )
+
+
+def set_dihedral_rigid(
+    coords: np.ndarray,
+    atoms: tuple[int, int, int, int],
+    target_dihedral_deg: float,
+) -> np.ndarray:
+    i, j, k, l = atoms
+    new_coords = np.array(coords, copy=True)
+    current_rad = dihedral_radians(coords, atoms)
+    target_rad = float(np.deg2rad(target_dihedral_deg))
+    delta_rad = wrap_angle_radians(target_rad - current_rad)
+
+    axis_point = coords[k]
+    axis_vec = coords[k] - coords[j]
+    rot = rotation_matrix(axis_vec, delta_rad)
+    rel = coords[l] - axis_point
+    new_coords[l] = axis_point + rot @ rel
+    return new_coords
+
+
+def angle_gradient(coords: np.ndarray, atoms: tuple[int, int, int]) -> np.ndarray:
+    i, j, k = atoms
+    vec_ji = coords[i] - coords[j]
+    vec_jk = coords[k] - coords[j]
+    norm_ji = float(np.linalg.norm(vec_ji))
+    norm_jk = float(np.linalg.norm(vec_jk))
+    u_ji = unit_vector(vec_ji)
+    u_jk = unit_vector(vec_jk)
+    cosine = float(np.clip(np.dot(u_ji, u_jk), -1.0, 1.0))
+    sine = float(np.sqrt(max(1.0 - cosine * cosine, 1.0e-16)))
+
+    dtheta_dji = -(u_jk - cosine * u_ji) / (norm_ji * sine)
+    dtheta_djk = -(u_ji - cosine * u_jk) / (norm_jk * sine)
+
+    gradient = np.zeros_like(coords)
+    gradient[i] = dtheta_dji
+    gradient[k] = dtheta_djk
+    gradient[j] = -(dtheta_dji + dtheta_djk)
+    return gradient
 
 
 def read_xyz_geometry(path: str) -> tuple[str, str]:

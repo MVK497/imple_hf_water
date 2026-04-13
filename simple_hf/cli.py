@@ -14,13 +14,20 @@ from .geometry import (
 from .mp2 import MP2Result, run_mp2
 from .optimize import OptimizationResult, optimize_geometry
 from .rhf import RHFResult, build_molecule, run_rhf
+from .scan import (
+    ScanResult,
+    coordinate_arity,
+    relaxed_scan,
+    rigid_scan,
+    write_scan_csv,
+)
 from .ump2 import UMP2Result, run_ump2
 from .uhf import UHFResult, run_uhf
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Minimal teaching example for RHF, UHF, and MP2 using PySCF integrals."
+        description="Minimal teaching example for RHF, UHF, MP2, UMP2, CCSD, geometry optimization, and angle scans."
     )
     input_group = parser.add_mutually_exclusive_group()
     input_group.add_argument(
@@ -70,6 +77,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a geometry optimization. Currently supported for RHF and UHF.",
     )
     parser.add_argument(
+        "--scan",
+        type=str,
+        choices=["rigid", "relaxed"],
+        help="Run an internal-coordinate scan. 'rigid' keeps other coordinates fixed; 'relaxed' optimizes all others.",
+    )
+    parser.add_argument(
+        "--scan-coordinate",
+        type=str,
+        default="angle",
+        choices=["bond", "angle", "dihedral"],
+        help="Internal coordinate type for scanning.",
+    )
+    parser.add_argument(
+        "--scan-atoms",
+        type=str,
+        help="1-based atom indices for the scan coordinate. bond: '1,2'; angle: '2,1,3'; dihedral: '1,2,3,4'.",
+    )
+    parser.add_argument("--scan-start", type=float, help="Scan start value. Degrees for angle/dihedral, geometry unit for bond.")
+    parser.add_argument("--scan-stop", type=float, help="Scan stop value. Degrees for angle/dihedral, geometry unit for bond.")
+    parser.add_argument("--scan-points", type=int, default=7, help="Number of scan points.")
+    parser.add_argument(
+        "--scan-output",
+        type=str,
+        help="Optional CSV file path for scan results.",
+    )
+    parser.add_argument(
+        "--constraint-k",
+        type=float,
+        default=50.0,
+        help="Harmonic penalty strength for relaxed angle scans in Eh/rad^2.",
+    )
+    parser.add_argument(
         "--opt-max-steps",
         type=int,
         default=30,
@@ -110,6 +149,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the SCF total energy at each iteration.",
     )
     return parser
+
+
+def parse_scan_atoms(text: str) -> tuple[int, ...]:
+    try:
+        values = [int(token.strip()) for token in text.split(",")]
+    except ValueError as exc:
+        raise ValueError("--scan-atoms must look like '1,2' or '2,1,3' or '1,2,3,4'.") from exc
+    if min(values) < 1:
+        raise ValueError("--scan-atoms uses 1-based indices, so all values must be >= 1.")
+    return tuple(value - 1 for value in values)
 
 
 def build_spec_from_args(args: argparse.Namespace) -> MoleculeSpec:
@@ -373,14 +422,98 @@ def print_optimization_result(
             )
 
 
+def print_scan_result(scan_result: ScanResult) -> None:
+    print(f"{scan_result.mode.capitalize()} {scan_result.coordinate_type.capitalize()} Scan")
+    print(f"Method: {scan_result.method}")
+    atoms_label = "-".join(str(atom + 1) for atom in scan_result.atoms)
+    print(f"Coordinate definition: {atoms_label}")
+    print(f"Coordinate unit: {scan_result.value_unit}")
+    print()
+    print("Scan points:")
+    for point in scan_result.points:
+        status = "ok" if point.converged else "not converged"
+        print(
+            f"  Pt {point.index:>2d}: "
+            f"target = {point.target_value:10.4f} {scan_result.value_unit}  "
+            f"actual = {point.actual_value:10.4f} {scan_result.value_unit}  "
+            f"E = {point.energy:.12f} Eh  "
+            f"{status}"
+        )
+    print()
+    print(
+        f"Best point: target = {scan_result.best_point.target_value:.6f} {scan_result.value_unit}, "
+        f"actual = {scan_result.best_point.actual_value:.6f} {scan_result.value_unit}, "
+        f"E = {scan_result.best_point.energy:.12f} Eh"
+    )
+    print()
+    print("Best geometry:")
+    print(scan_result.best_point.spec.atom)
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
     if args.diis_space < 2:
         parser.error("--diis-space must be at least 2.")
+    if args.scan_points is not None and args.scan_points < 2:
+        parser.error("--scan-points must be at least 2.")
+    if args.optimize and args.scan:
+        parser.error("--optimize and --scan cannot be used together.")
     if args.optimize and args.method not in {"rhf", "uhf"}:
         parser.error("--optimize currently supports only --method rhf or --method uhf.")
     spec = build_spec_from_args(args)
+    if args.scan:
+        if args.scan_atoms is None or args.scan_start is None or args.scan_stop is None:
+            parser.error("--scan requires --scan-atoms, --scan-start, and --scan-stop.")
+        scan_atoms = parse_scan_atoms(args.scan_atoms)
+        expected_arity = coordinate_arity(args.scan_coordinate)
+        if len(scan_atoms) != expected_arity:
+            parser.error(f"--scan-coordinate {args.scan_coordinate} requires exactly {expected_arity} atom indices.")
+        natom = len(spec.atom.splitlines())
+        if max(scan_atoms) >= natom:
+            parser.error(f"--scan-atoms refers to atom index > {natom}.")
+        if args.scan == "rigid":
+            scan_result = rigid_scan(
+                spec,
+                method=args.method,
+                coordinate_type=args.scan_coordinate,
+                atoms=scan_atoms,
+                start_value=args.scan_start,
+                stop_value=args.scan_stop,
+                num_points=args.scan_points,
+                max_iter=args.max_iter,
+                e_tol=args.energy_tol,
+                d_tol=args.density_tol,
+                use_diis=not args.no_diis,
+                diis_space=args.diis_space,
+            )
+        else:
+            if args.method not in {"rhf", "uhf"}:
+                parser.error("--scan relaxed currently supports only --method rhf or --method uhf.")
+            scan_result = relaxed_scan(
+                spec,
+                method=args.method,
+                coordinate_type=args.scan_coordinate,
+                atoms=scan_atoms,
+                start_value=args.scan_start,
+                stop_value=args.scan_stop,
+                num_points=args.scan_points,
+                penalty_k=args.constraint_k,
+                max_opt_steps=args.opt_max_steps,
+                grad_tol=args.grad_tol,
+                opt_energy_tol=args.opt_energy_tol,
+                max_step_size=args.max_step_size,
+                max_iter=args.max_iter,
+                scf_e_tol=args.energy_tol,
+                scf_d_tol=args.density_tol,
+                use_diis=not args.no_diis,
+                diis_space=args.diis_space,
+            )
+        if args.scan_output:
+            write_scan_csv(scan_result, args.scan_output)
+        print_scan_result(scan_result)
+        return
+
     if args.optimize:
         opt_result = optimize_geometry(
             spec,
