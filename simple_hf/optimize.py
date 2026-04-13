@@ -6,7 +6,9 @@ from typing import Callable
 import numpy as np
 
 from .geometry import MoleculeSpec, convert_coords, format_atom_string, parse_atom_string
+from .rks import RKSResult, build_rks_reference_mf, run_rks
 from .rhf import RHFResult, build_molecule, build_rhf_reference_mf, run_rhf
+from .uks import UKSResult, build_uks_reference_mf, run_uks
 from .uhf import UHFResult, build_uhf_reference_mf, run_uhf
 
 
@@ -22,6 +24,7 @@ class OptimizationStep:
 @dataclass
 class OptimizationResult:
     method: str
+    xc: str | None
     initial_energy: float
     final_energy: float
     converged: bool
@@ -29,7 +32,7 @@ class OptimizationResult:
     optimized_spec: MoleculeSpec
     final_gradient: np.ndarray
     history: list[OptimizationStep]
-    final_result: RHFResult | UHFResult
+    final_result: RHFResult | UHFResult | RKSResult | UKSResult
 
 
 PenaltyFunction = Callable[[np.ndarray], tuple[float, np.ndarray]]
@@ -38,13 +41,14 @@ PenaltyFunction = Callable[[np.ndarray], tuple[float, np.ndarray]]
 def evaluate_energy_and_gradient(
     spec: MoleculeSpec,
     method: str,
+    xc: str,
     max_iter: int,
     e_tol: float,
     d_tol: float,
     use_diis: bool,
     diis_space: int,
     penalty_function: PenaltyFunction | None = None,
-) -> tuple[float, np.ndarray, RHFResult | UHFResult]:
+) -> tuple[float, np.ndarray, RHFResult | UHFResult | RKSResult | UKSResult]:
     mol = build_molecule(spec)
     if method == "rhf":
         result = run_rhf(
@@ -56,6 +60,17 @@ def evaluate_energy_and_gradient(
             diis_space=diis_space,
         )
         mf, _ = build_rhf_reference_mf(mol, result)
+    elif method == "rks":
+        result = run_rks(
+            mol,
+            xc=xc,
+            max_iter=max_iter,
+            e_tol=e_tol,
+            d_tol=d_tol,
+            use_diis=use_diis,
+            diis_space=diis_space,
+        )
+        mf, _ = build_rks_reference_mf(mol, result)
     elif method == "uhf":
         result = run_uhf(
             mol,
@@ -66,6 +81,17 @@ def evaluate_energy_and_gradient(
             diis_space=diis_space,
         )
         mf, _ = build_uhf_reference_mf(mol, result)
+    elif method == "uks":
+        result = run_uks(
+            mol,
+            xc=xc,
+            max_iter=max_iter,
+            e_tol=e_tol,
+            d_tol=d_tol,
+            use_diis=use_diis,
+            diis_space=diis_space,
+        )
+        mf, _ = build_uks_reference_mf(mol, result)
     else:
         raise ValueError(f"Unsupported optimization method '{method}'.")
 
@@ -115,6 +141,7 @@ def format_spec_in_original_unit(spec_bohr: MoleculeSpec, output_unit: str) -> M
 def optimize_geometry(
     spec: MoleculeSpec,
     method: str,
+    xc: str = "b3lyp",
     max_opt_steps: int = 30,
     grad_tol: float = 1.0e-4,
     energy_tol: float = 1.0e-8,
@@ -126,8 +153,8 @@ def optimize_geometry(
     diis_space: int = 6,
     penalty_function: PenaltyFunction | None = None,
 ) -> OptimizationResult:
-    if method not in {"rhf", "uhf"}:
-        raise ValueError("Geometry optimization currently supports only RHF and UHF.")
+    if method not in {"rhf", "uhf", "rks", "uks"}:
+        raise ValueError("Geometry optimization currently supports RHF, UHF, RKS, and UKS.")
 
     symbols, coords_input = parse_atom_string(spec.atom)
     coords_bohr = convert_coords(coords_input, spec.unit, "Bohr")
@@ -135,6 +162,7 @@ def optimize_geometry(
     current_energy, current_gradient, current_result = evaluate_energy_and_gradient(
         current_spec,
         method,
+        xc,
         max_iter,
         scf_e_tol,
         scf_d_tol,
@@ -184,21 +212,31 @@ def optimize_geometry(
         trial_alpha = 1.0
         accepted = False
         c1 = 1.0e-4
-        best_trial: tuple[float, np.ndarray, RHFResult | UHFResult, np.ndarray] | None = None
+        best_trial: tuple[
+            float,
+            np.ndarray,
+            RHFResult | UHFResult | RKSResult | UKSResult,
+            np.ndarray,
+        ] | None = None
 
         for _ in range(12):
             trial_coords_bohr = coords_bohr + trial_alpha * direction.reshape(-1, 3)
             trial_spec = make_spec_with_bohr_coords(symbols, trial_coords_bohr, spec)
-            trial_energy, trial_gradient, trial_result = evaluate_energy_and_gradient(
-                trial_spec,
-                method,
-                max_iter,
-                scf_e_tol,
-                scf_d_tol,
-                use_diis,
-                diis_space,
-                penalty_function,
-            )
+            try:
+                trial_energy, trial_gradient, trial_result = evaluate_energy_and_gradient(
+                    trial_spec,
+                    method,
+                    xc,
+                    max_iter,
+                    scf_e_tol,
+                    scf_d_tol,
+                    use_diis,
+                    diis_space,
+                    penalty_function,
+                )
+            except RuntimeError:
+                trial_alpha *= 0.5
+                continue
             if trial_energy <= current_energy + c1 * trial_alpha * float(np.dot(gradient_flat, direction)):
                 best_trial = (trial_energy, trial_gradient, trial_result, trial_coords_bohr)
                 accepted = True
@@ -257,6 +295,7 @@ def optimize_geometry(
     optimized_spec = format_spec_in_original_unit(current_spec, spec.unit)
     return OptimizationResult(
         method=method,
+        xc=xc if method in {"rks", "uks"} else None,
         initial_energy=initial_energy,
         final_energy=current_energy,
         converged=converged,

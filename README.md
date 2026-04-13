@@ -4,10 +4,12 @@
 
 - `RHF`
 - `UHF`
+- `RKS`
+- `UKS`
 - `RMP2`
 - `UMP2`
 - `RHF-based CCSD`
-- `RHF/UHF` 几何优化
+- `RHF/UHF/RKS/UKS` 几何优化
 - 键长刚性扫描 / 柔性扫描
 - 键角刚性扫描 / 柔性扫描
 - 二面角刚性扫描 / 柔性扫描
@@ -31,10 +33,12 @@ python3 -m pip install -r requirements.txt
 - `simple_hf/geometry.py`: 几何输入、坐标变换、键长/键角/二面角工具
 - `simple_hf/rhf.py`: `RHF` 与 `DIIS`
 - `simple_hf/uhf.py`: `UHF` 与 `<S^2>`
+- `simple_hf/rks.py`: `RKS`
+- `simple_hf/uks.py`: `UKS` 与 `<S^2>`
 - `simple_hf/mp2.py`: `RMP2`
 - `simple_hf/ump2.py`: `UMP2`
 - `simple_hf/ccsd.py`: `CCSD`
-- `simple_hf/optimize.py`: `RHF/UHF` 几何优化
+- `simple_hf/optimize.py`: `RHF/UHF/RKS/UKS` 几何优化
 - `simple_hf/scan.py`: 内坐标扫描模块
 - `examples/water.xyz`: 水分子示例
 - `examples/oh_radical.xyz`: `OH` 自由基示例
@@ -80,6 +84,18 @@ python3 rhf_sto3g_water.py --method rhf
 python3 rhf_sto3g_water.py --method uhf --geometry "H 0 0 0" --spin 1
 ```
 
+`RKS`：
+
+```bash
+python3 rhf_sto3g_water.py --method rks --xc b3lyp
+```
+
+`UKS`：
+
+```bash
+python3 rhf_sto3g_water.py --method uks --xc pbe --xyz examples/oh_radical.xyz --spin 1
+```
+
 `RMP2`：
 
 ```bash
@@ -104,12 +120,26 @@ python3 rhf_sto3g_water.py --method ccsd
 python3 rhf_sto3g_water.py --xyz examples/water.xyz --basis '6-31G(d)' --method ccsd
 ```
 
+常见的 `DFT` 泛函可以通过 `--xc` 指定，例如：
+
+- `lda,vwn`
+- `pbe`
+- `b3lyp`
+
+例如：
+
+```bash
+python3 rhf_sto3g_water.py --method rks --xc pbe --basis '6-31G(d)'
+```
+
 ## 几何优化
 
 当前几何优化支持：
 
 - `RHF`
 - `UHF`
+- `RKS`
+- `UKS`
 
 水分子 `RHF` 优化：
 
@@ -121,6 +151,18 @@ python3 rhf_sto3g_water.py --method rhf --optimize
 
 ```bash
 python3 rhf_sto3g_water.py --method uhf --xyz examples/oh_radical.xyz --spin 1 --optimize
+```
+
+水分子 `RKS/B3LYP` 优化：
+
+```bash
+python3 rhf_sto3g_water.py --method rks --xc b3lyp --optimize
+```
+
+`OH` 自由基 `UKS/PBE` 优化：
+
+```bash
+python3 rhf_sto3g_water.py --method uks --xc pbe --xyz examples/oh_radical.xyz --spin 1 --optimize
 ```
 
 查看优化历史：
@@ -251,8 +293,24 @@ python3 rhf_sto3g_water.py \
 
 - `RHF`
 - `UHF`
+- `RKS`
+- `UKS`
 
 因为它内部需要解析梯度和几何优化。
+
+`DFT` 扫描时也可以直接指定泛函，例如：
+
+```bash
+python3 rhf_sto3g_water.py \
+  --method rks \
+  --xc b3lyp \
+  --scan rigid \
+  --scan-coordinate angle \
+  --scan-atoms 2,1,3 \
+  --scan-start 95 \
+  --scan-stop 115 \
+  --scan-points 5
+```
 
 ### 导出扫描结果
 

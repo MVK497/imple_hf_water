@@ -13,6 +13,7 @@ from .geometry import (
 )
 from .mp2 import MP2Result, run_mp2
 from .optimize import OptimizationResult, optimize_geometry
+from .rks import RKSResult, run_rks
 from .rhf import RHFResult, build_molecule, run_rhf
 from .scan import (
     ScanResult,
@@ -22,12 +23,13 @@ from .scan import (
     write_scan_csv,
 )
 from .ump2 import UMP2Result, run_ump2
+from .uks import UKSResult, run_uks
 from .uhf import UHFResult, run_uhf
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Minimal teaching example for RHF, UHF, MP2, UMP2, CCSD, geometry optimization, and angle scans."
+        description="Minimal teaching example for HF/DFT/post-HF methods, geometry optimization, and internal-coordinate scans."
     )
     input_group = parser.add_mutually_exclusive_group()
     input_group.add_argument(
@@ -51,15 +53,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--method",
         type=str,
         default="rhf",
-        choices=["rhf", "uhf", "mp2", "ump2", "ccsd"],
+        choices=["rhf", "uhf", "rks", "uks", "mp2", "ump2", "ccsd"],
         help="Electronic structure method to run.",
+    )
+    parser.add_argument(
+        "--xc",
+        type=str,
+        default="b3lyp",
+        help="DFT exchange-correlation functional for RKS/UKS, such as 'lda,vwn', 'pbe', or 'b3lyp'.",
     )
     parser.add_argument("--charge", type=int, default=0, help="Total molecular charge.")
     parser.add_argument(
         "--spin",
         type=int,
         default=0,
-        help="2S = N(alpha) - N(beta). RHF/MP2 require spin = 0; UHF supports open-shell cases.",
+        help="2S = N(alpha) - N(beta). RHF/RKS/MP2/CCSD require spin = 0; UHF/UKS support open-shell cases.",
     )
     parser.add_argument(
         "--unit",
@@ -74,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--optimize",
         action="store_true",
-        help="Run a geometry optimization. Currently supported for RHF and UHF.",
+        help="Run a geometry optimization. Supported for RHF, UHF, RKS, and UKS.",
     )
     parser.add_argument(
         "--scan",
@@ -227,6 +235,38 @@ def print_rhf_result(
             print(f"  Iter {iteration:>2d}: {energy:.12f}")
 
 
+def print_rks_result(
+    spec: MoleculeSpec,
+    result: RKSResult,
+    nao: int,
+    nelectron: int,
+    show_history: bool,
+) -> None:
+    print("Restricted Kohn-Sham DFT")
+    print(f"System: {spec.title}")
+    print(f"Basis set: {spec.basis}")
+    print(f"XC functional: {result.xc}")
+    print(f"Unit: {spec.unit}")
+    print(f"Charge: {spec.charge}")
+    print(f"Spin: {spec.spin}")
+    print(f"Basis functions: {nao}")
+    print(f"Electrons: {nelectron}")
+    print(f"SCF iterations: {result.iterations}")
+    print(f"Nuclear repulsion energy: {result.nuclear_repulsion:.12f} Eh")
+    print(f"Electronic energy:        {result.electronic_energy:.12f} Eh")
+    print(f"Total RKS energy:         {result.energy:.12f} Eh")
+    print()
+    print("Orbital energies (Eh):")
+    for index, energy in enumerate(result.orbital_energies, start=1):
+        print(f"  MO {index:>2d}: {energy: .12f}")
+
+    if show_history:
+        print()
+        print("RKS SCF history (total energy in Eh):")
+        for iteration, energy in enumerate(result.history, start=1):
+            print(f"  Iter {iteration:>2d}: {energy:.12f}")
+
+
 def print_mp2_result(
     spec: MoleculeSpec,
     rhf_result: RHFResult,
@@ -340,6 +380,47 @@ def print_uhf_result(
             print(f"  Iter {iteration:>2d}: {energy:.12f}")
 
 
+def print_uks_result(
+    spec: MoleculeSpec,
+    result: UKSResult,
+    nao: int,
+    nelectron: int,
+    show_history: bool,
+) -> None:
+    print("Unrestricted Kohn-Sham DFT")
+    print(f"System: {spec.title}")
+    print(f"Basis set: {spec.basis}")
+    print(f"XC functional: {result.xc}")
+    print(f"Unit: {spec.unit}")
+    print(f"Charge: {spec.charge}")
+    print(f"Spin: {spec.spin}")
+    print(f"Basis functions: {nao}")
+    print(f"Electrons: {nelectron}")
+    print(f"Alpha electrons: {result.nalpha}")
+    print(f"Beta electrons:  {result.nbeta}")
+    print(f"SCF iterations: {result.iterations}")
+    print(f"Nuclear repulsion energy: {result.nuclear_repulsion:.12f} Eh")
+    print(f"Electronic energy:        {result.electronic_energy:.12f} Eh")
+    print(f"Total UKS energy:         {result.energy:.12f} Eh")
+    print(f"<S^2>:                    {result.s2:.12f}")
+    print(f"Expected <S^2>:           {result.expected_s2:.12f}")
+    print(f"Spin contamination:       {result.spin_contamination:.12f}")
+    print()
+    print("Alpha orbital energies (Eh):")
+    for index, energy in enumerate(result.orbital_energies_alpha, start=1):
+        print(f"  aMO {index:>2d}: {energy: .12f}")
+    print()
+    print("Beta orbital energies (Eh):")
+    for index, energy in enumerate(result.orbital_energies_beta, start=1):
+        print(f"  bMO {index:>2d}: {energy: .12f}")
+
+    if show_history:
+        print()
+        print("UKS SCF history (total energy in Eh):")
+        for iteration, energy in enumerate(result.history, start=1):
+            print(f"  Iter {iteration:>2d}: {energy:.12f}")
+
+
 def print_ump2_result(
     spec: MoleculeSpec,
     uhf_result: UHFResult,
@@ -395,6 +476,8 @@ def print_optimization_result(
     print(f"{result.method.upper()} Geometry Optimization")
     print(f"System: {spec.title}")
     print(f"Basis set: {spec.basis}")
+    if result.xc is not None:
+        print(f"XC functional: {result.xc}")
     print(f"Unit: {spec.unit}")
     print(f"Charge: {spec.charge}")
     print(f"Spin: {spec.spin}")
@@ -425,6 +508,8 @@ def print_optimization_result(
 def print_scan_result(scan_result: ScanResult) -> None:
     print(f"{scan_result.mode.capitalize()} {scan_result.coordinate_type.capitalize()} Scan")
     print(f"Method: {scan_result.method}")
+    if scan_result.xc is not None:
+        print(f"XC functional: {scan_result.xc}")
     atoms_label = "-".join(str(atom + 1) for atom in scan_result.atoms)
     print(f"Coordinate definition: {atoms_label}")
     print(f"Coordinate unit: {scan_result.value_unit}")
@@ -459,8 +544,8 @@ def main() -> None:
         parser.error("--scan-points must be at least 2.")
     if args.optimize and args.scan:
         parser.error("--optimize and --scan cannot be used together.")
-    if args.optimize and args.method not in {"rhf", "uhf"}:
-        parser.error("--optimize currently supports only --method rhf or --method uhf.")
+    if args.optimize and args.method not in {"rhf", "uhf", "rks", "uks"}:
+        parser.error("--optimize currently supports --method rhf, uhf, rks, or uks.")
     spec = build_spec_from_args(args)
     if args.scan:
         if args.scan_atoms is None or args.scan_start is None or args.scan_stop is None:
@@ -476,6 +561,7 @@ def main() -> None:
             scan_result = rigid_scan(
                 spec,
                 method=args.method,
+                xc=args.xc,
                 coordinate_type=args.scan_coordinate,
                 atoms=scan_atoms,
                 start_value=args.scan_start,
@@ -488,11 +574,12 @@ def main() -> None:
                 diis_space=args.diis_space,
             )
         else:
-            if args.method not in {"rhf", "uhf"}:
-                parser.error("--scan relaxed currently supports only --method rhf or --method uhf.")
+            if args.method not in {"rhf", "uhf", "rks", "uks"}:
+                parser.error("--scan relaxed currently supports --method rhf, uhf, rks, or uks.")
             scan_result = relaxed_scan(
                 spec,
                 method=args.method,
+                xc=args.xc,
                 coordinate_type=args.scan_coordinate,
                 atoms=scan_atoms,
                 start_value=args.scan_start,
@@ -518,6 +605,7 @@ def main() -> None:
         opt_result = optimize_geometry(
             spec,
             method=args.method,
+            xc=args.xc,
             max_opt_steps=args.opt_max_steps,
             grad_tol=args.grad_tol,
             energy_tol=args.opt_energy_tol,
@@ -545,6 +633,19 @@ def main() -> None:
         print_rhf_result(spec, rhf_result, mol.nao_nr(), mol.nelectron, args.show_history)
         return
 
+    if args.method == "rks":
+        rks_result = run_rks(
+            mol,
+            xc=args.xc,
+            max_iter=args.max_iter,
+            e_tol=args.energy_tol,
+            d_tol=args.density_tol,
+            use_diis=not args.no_diis,
+            diis_space=args.diis_space,
+        )
+        print_rks_result(spec, rks_result, mol.nao_nr(), mol.nelectron, args.show_history)
+        return
+
     if args.method == "mp2":
         assert rhf_result is not None
         mp2_result = run_mp2(mol, rhf_result)
@@ -555,6 +656,19 @@ def main() -> None:
         assert rhf_result is not None
         ccsd_result = run_ccsd(mol, rhf_result)
         print_ccsd_result(spec, rhf_result, ccsd_result, mol.nao_nr(), mol.nelectron, args.show_history)
+        return
+
+    if args.method == "uks":
+        uks_result = run_uks(
+            mol,
+            xc=args.xc,
+            max_iter=args.max_iter,
+            e_tol=args.energy_tol,
+            d_tol=args.density_tol,
+            use_diis=not args.no_diis,
+            diis_space=args.diis_space,
+        )
+        print_uks_result(spec, uks_result, mol.nao_nr(), mol.nelectron, args.show_history)
         return
 
     uhf_result = run_uhf(

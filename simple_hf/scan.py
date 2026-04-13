@@ -26,12 +26,14 @@ from .geometry import (
 )
 from .mp2 import MP2Result, run_mp2
 from .optimize import OptimizationResult, optimize_geometry
+from .rks import RKSResult, run_rks
 from .rhf import RHFResult, build_molecule, run_rhf
 from .ump2 import UMP2Result, run_ump2
+from .uks import UKSResult, run_uks
 from .uhf import UHFResult, run_uhf
 
 
-SinglePointResult = RHFResult | UHFResult | MP2Result | UMP2Result | CCSDResult
+SinglePointResult = RHFResult | UHFResult | RKSResult | UKSResult | MP2Result | UMP2Result | CCSDResult
 
 
 @dataclass
@@ -42,7 +44,7 @@ class ScanPoint:
     energy: float
     converged: bool
     spec: MoleculeSpec
-    result: SinglePointResult | RHFResult | UHFResult
+    result: SinglePointResult | RHFResult | UHFResult | None
     optimization_result: OptimizationResult | None = None
 
 
@@ -51,6 +53,7 @@ class ScanResult:
     mode: str
     coordinate_type: str
     method: str
+    xc: str | None
     atoms: tuple[int, ...]
     value_unit: str
     points: list[ScanPoint]
@@ -161,6 +164,7 @@ def build_coordinate_penalty(
 def evaluate_single_point(
     spec: MoleculeSpec,
     method: str,
+    xc: str,
     max_iter: int,
     e_tol: float,
     d_tol: float,
@@ -170,6 +174,17 @@ def evaluate_single_point(
     mol = build_molecule(spec)
     if method == "rhf":
         result = run_rhf(mol, max_iter=max_iter, e_tol=e_tol, d_tol=d_tol, use_diis=use_diis, diis_space=diis_space)
+        return result.energy, result
+    if method == "rks":
+        result = run_rks(
+            mol,
+            xc=xc,
+            max_iter=max_iter,
+            e_tol=e_tol,
+            d_tol=d_tol,
+            use_diis=use_diis,
+            diis_space=diis_space,
+        )
         return result.energy, result
     if method == "mp2":
         rhf_result = run_rhf(mol, max_iter=max_iter, e_tol=e_tol, d_tol=d_tol, use_diis=use_diis, diis_space=diis_space)
@@ -182,6 +197,17 @@ def evaluate_single_point(
     if method == "uhf":
         result = run_uhf(mol, max_iter=max_iter, e_tol=e_tol, d_tol=d_tol, use_diis=use_diis, diis_space=diis_space)
         return result.energy, result
+    if method == "uks":
+        result = run_uks(
+            mol,
+            xc=xc,
+            max_iter=max_iter,
+            e_tol=e_tol,
+            d_tol=d_tol,
+            use_diis=use_diis,
+            diis_space=diis_space,
+        )
+        return result.energy, result
     if method == "ump2":
         uhf_result = run_uhf(mol, max_iter=max_iter, e_tol=e_tol, d_tol=d_tol, use_diis=use_diis, diis_space=diis_space)
         result = run_ump2(mol, uhf_result)
@@ -192,6 +218,7 @@ def evaluate_single_point(
 def rigid_scan(
     spec: MoleculeSpec,
     method: str,
+    xc: str,
     coordinate_type: str,
     atoms: tuple[int, ...],
     start_value: float,
@@ -217,23 +244,30 @@ def rigid_scan(
             unit=spec.unit,
             title=spec.title,
         )
-        energy, result = evaluate_single_point(
-            scan_spec,
-            method,
-            max_iter,
-            e_tol,
-            d_tol,
-            use_diis,
-            diis_space,
-        )
         actual = coordinate_value_display(scan_coords, coordinate_type, atoms)
+        try:
+            energy, result = evaluate_single_point(
+                scan_spec,
+                method,
+                xc,
+                max_iter,
+                e_tol,
+                d_tol,
+                use_diis,
+                diis_space,
+            )
+            converged = True
+        except RuntimeError:
+            energy = float("inf")
+            result = None
+            converged = False
         points.append(
             ScanPoint(
                 index=index,
                 target_value=float(target_value),
                 actual_value=actual,
                 energy=float(energy),
-                converged=True,
+                converged=converged,
                 spec=scan_spec,
                 result=result,
             )
@@ -244,6 +278,7 @@ def rigid_scan(
         mode="rigid",
         coordinate_type=coordinate_type,
         method=method,
+        xc=xc if method in {"rks", "uks"} else None,
         atoms=atoms,
         value_unit=coordinate_display_unit(coordinate_type, spec.unit),
         points=points,
@@ -271,6 +306,7 @@ def anchor_translation_bohr(
 def relaxed_scan(
     spec: MoleculeSpec,
     method: str,
+    xc: str,
     coordinate_type: str,
     atoms: tuple[int, ...],
     start_value: float,
@@ -287,8 +323,8 @@ def relaxed_scan(
     use_diis: bool,
     diis_space: int,
 ) -> ScanResult:
-    if method not in {"rhf", "uhf"}:
-        raise ValueError("Relaxed scans currently support only RHF and UHF.")
+    if method not in {"rhf", "uhf", "rks", "uks"}:
+        raise ValueError("Relaxed scans currently support RHF, UHF, RKS, and UKS.")
 
     symbols, coords_input = parse_atom_string(spec.atom)
     coords_bohr = convert_coords(coords_input, spec.unit, "Bohr")
@@ -317,34 +353,61 @@ def relaxed_scan(
             title=spec.title,
         )
         target_internal = target_value_to_internal(float(target_display), coordinate_type, spec.unit)
-        opt_result = optimize_geometry(
-            start_spec,
-            method=method,
-            max_opt_steps=max_opt_steps,
-            grad_tol=grad_tol,
-            energy_tol=opt_energy_tol,
-            max_step_size=max_step_size,
-            max_iter=max_iter,
-            scf_e_tol=scf_e_tol,
-            scf_d_tol=scf_d_tol,
-            use_diis=use_diis,
-            diis_space=diis_space,
-            penalty_function=build_coordinate_penalty(coordinate_type, atoms, target_internal, penalty_k),
-        )
+        try:
+            opt_result = optimize_geometry(
+                start_spec,
+                method=method,
+                xc=xc,
+                max_opt_steps=max_opt_steps,
+                grad_tol=grad_tol,
+                energy_tol=opt_energy_tol,
+                max_step_size=max_step_size,
+                max_iter=max_iter,
+                scf_e_tol=scf_e_tol,
+                scf_d_tol=scf_d_tol,
+                use_diis=use_diis,
+                diis_space=diis_space,
+                penalty_function=build_coordinate_penalty(coordinate_type, atoms, target_internal, penalty_k),
+            )
 
-        optimized_symbols, optimized_coords_out = parse_atom_string(opt_result.optimized_spec.atom)
-        optimized_coords_bohr = convert_coords(optimized_coords_out, opt_result.optimized_spec.unit, "Bohr")
-        translation_bohr = anchor_translation_bohr(
-            coordinate_type,
-            atoms,
-            coords_bohr,
-            optimized_coords_bohr,
-        )
-        optimized_coords_bohr = optimized_coords_bohr + translation_bohr
-        optimized_coords_out = convert_coords(optimized_coords_bohr, "Bohr", spec.unit)
-        working_coords_bohr = optimized_coords_bohr
-        actual_display = coordinate_value_display(optimized_coords_out, coordinate_type, atoms)
-        true_energy = float(opt_result.final_result.energy)
+            optimized_symbols, optimized_coords_out = parse_atom_string(opt_result.optimized_spec.atom)
+            optimized_coords_bohr = convert_coords(optimized_coords_out, opt_result.optimized_spec.unit, "Bohr")
+            translation_bohr = anchor_translation_bohr(
+                coordinate_type,
+                atoms,
+                coords_bohr,
+                optimized_coords_bohr,
+            )
+            optimized_coords_bohr = optimized_coords_bohr + translation_bohr
+            optimized_coords_out = convert_coords(optimized_coords_bohr, "Bohr", spec.unit)
+            working_coords_bohr = optimized_coords_bohr
+            actual_display = coordinate_value_display(optimized_coords_out, coordinate_type, atoms)
+            true_energy = float(opt_result.final_result.energy)
+            point_spec = MoleculeSpec(
+                atom=format_atom_string(optimized_symbols, optimized_coords_out),
+                basis=spec.basis,
+                charge=spec.charge,
+                spin=spec.spin,
+                unit=spec.unit,
+                title=spec.title,
+            )
+            point_result = opt_result.final_result
+            point_converged = opt_result.converged
+        except RuntimeError:
+            fallback_coords_out = convert_coords(start_coords_bohr, "Bohr", spec.unit)
+            actual_display = coordinate_value_display(fallback_coords_out, coordinate_type, atoms)
+            true_energy = float("inf")
+            point_spec = MoleculeSpec(
+                atom=format_atom_string(symbols, fallback_coords_out),
+                basis=spec.basis,
+                charge=spec.charge,
+                spin=spec.spin,
+                unit=spec.unit,
+                title=spec.title,
+            )
+            point_result = None
+            point_converged = False
+            opt_result = None
 
         points.append(
             ScanPoint(
@@ -352,16 +415,9 @@ def relaxed_scan(
                 target_value=float(target_display),
                 actual_value=actual_display,
                 energy=true_energy,
-                converged=opt_result.converged,
-                spec=MoleculeSpec(
-                    atom=format_atom_string(optimized_symbols, optimized_coords_out),
-                    basis=spec.basis,
-                    charge=spec.charge,
-                    spin=spec.spin,
-                    unit=spec.unit,
-                    title=spec.title,
-                ),
-                result=opt_result.final_result,
+                converged=point_converged,
+                spec=point_spec,
+                result=point_result,
                 optimization_result=opt_result,
             )
         )
@@ -371,6 +427,7 @@ def relaxed_scan(
         mode="relaxed",
         coordinate_type=coordinate_type,
         method=method,
+        xc=xc if method in {"rks", "uks"} else None,
         atoms=atoms,
         value_unit=coordinate_display_unit(coordinate_type, spec.unit),
         points=points,
